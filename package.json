@@ -1,0 +1,21 @@
+{
+  "name": "hotel-booking-system",
+  "version": "1.0.0",
+  "description": "Hệ thống Đặt phòng Khách sạn - Đề 6",
+  "scripts": {
+    "start": "npm run start:backend",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev"
+  },
+  "keywords": [
+    "hotel",
+    "booking",
+    "react",
+    "express",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "MIT"
+}

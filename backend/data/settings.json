@@ -1,0 +1,15 @@
+{
+  "hotelName": "HOTEL 5 SAO",
+  "hotelAddress": "ngã ba bản kè, xã Lâm Bình, tỉnh Tuyên Quang",
+  "hotelPhone": "1900 6868 - (028) 3822 8888",
+  "hotelEmail": "nguyenthuychang519@gmail.com",
+  "checkInTime": "14:00",
+  "checkOutTime": "12:00",
+  "cancelPolicyHours": 24,
+  "vatRate": 10,
+  "bankName": "Ngân hàng TMCP Quân Đội (MB Bank)",
+  "bankAccount": "0964880630",
+  "bankAccountName": "NGUYEN THUY CHANG",
+  "allowPayAtHotel": true,
+  "maintenanceMode": false
+}
