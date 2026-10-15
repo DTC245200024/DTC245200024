@@ -174,3 +174,51 @@ export function getBrandLogoDetails(hotelName) {
   };
 }
 
+/**
+ * Trích xuất mã viết tắt chuẩn ngân hàng cho VietQR QuickLink
+ */
+export function getVietQRBankCode(bankName) {
+  if (!bankName) return "MB";
+  const s = String(bankName).toLowerCase();
+  if (s.includes("quân đội") || s.includes("mb")) return "MB";
+  if (s.includes("vietcombank") || s.includes("vcb")) return "VCB";
+  if (s.includes("techcombank") || s.includes("tcb")) return "TCB";
+  if (s.includes("bidv")) return "BIDV";
+  if (s.includes("vietinbank") || s.includes("ctg") || s.includes("icb")) return "ICB";
+  if (s.includes("vpbank") || s.includes("vpb")) return "VPB";
+  if (s.includes("acb")) return "ACB";
+  if (s.includes("tpbank") || s.includes("tpb")) return "TPB";
+  if (s.includes("sacombank") || s.includes("stb")) return "STB";
+  if (s.includes("vib")) return "VIB";
+  if (s.includes("hdbank") || s.includes("hdb")) return "HDB";
+  if (s.includes("shb")) return "SHB";
+  if (s.includes("agribank") || s.includes("vba")) return "VBA";
+  return "MB";
+}
+
+/**
+ * Tạo URL mã QR thanh toán chuẩn VietQR
+ * - Ưu tiên ảnh QR tải lên nếu có
+ * - Tự động tạo VietQR động đúng tài khoản, số tiền và nội dung chuyển khoản
+ */
+export function generateVietQRUrl({ bankName, bankAccount, bankAccountName, amount = 0, content = "", customQrUrl = "" }) {
+  if (customQrUrl && String(customQrUrl).trim()) {
+    const url = String(customQrUrl).trim();
+    if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
+      return url;
+    }
+    return `http://localhost:5001${url.startsWith("/") ? url : "/" + url}`;
+  }
+
+  const bankCode = getVietQRBankCode(bankName);
+  const cleanAccount = String(bankAccount || "").replace(/\s+/g, "");
+  const numAmount = Math.max(0, Math.round(Number(amount) || 0));
+  const cleanContent = encodeURIComponent(String(content || "").trim());
+  const cleanName = encodeURIComponent(String(bankAccountName || "").trim());
+
+  if (!cleanAccount) return "";
+
+  return `https://img.vietqr.io/image/${bankCode}-${cleanAccount}-compact2.png?amount=${numAmount}&addInfo=${cleanContent}&accountName=${cleanName}`;
+}
+
+

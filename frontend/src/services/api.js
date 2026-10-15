@@ -17,13 +17,17 @@ function getAuthHeaders() {
 
 async function request(endpoint, options = {}) {
   const authHeaders = getAuthHeaders();
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const headers = {
+    ...authHeaders,
+    ...options.headers
+  };
+  if (!isFormData && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
   const config = {
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      ...options.headers
-    },
-    ...options
+    ...options,
+    headers
   };
 
   try {
@@ -106,6 +110,19 @@ export const authApi = {
     return request("/auth/settings", {
       method: "PUT",
       body: JSON.stringify(settings)
+    });
+  },
+
+  uploadQrCode: async (formData) => {
+    return request("/auth/settings/qr-upload", {
+      method: "POST",
+      body: formData
+    });
+  },
+
+  deleteQrCode: async () => {
+    return request("/auth/settings/qr-code", {
+      method: "DELETE"
     });
   },
 

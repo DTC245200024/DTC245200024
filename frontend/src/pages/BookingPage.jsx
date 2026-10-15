@@ -4,7 +4,7 @@ import {
   CheckCircle2, Sparkles, ArrowRight, ShieldCheck, Copy, Eye, UserCheck, 
   CreditCard, Building, QrCode, Check, AlertCircle, ArrowLeft 
 } from "lucide-react";
-import { formatCurrency, calculateNights, getTodayDateString, getTomorrowDateString, getStatusBadge } from "../utils/formatters";
+import { formatCurrency, calculateNights, getTodayDateString, getTomorrowDateString, getStatusBadge, generateVietQRUrl } from "../utils/formatters";
 import { bookingApi } from "../services/api";
 
 export default function BookingPage({ 
@@ -385,15 +385,36 @@ export default function BookingPage({
                       </div>
                     </div>
 
-                    {/* QR Code mô phỏng chuẩn VietQR */}
+                    {/* QR Code thanh toán: Lấy từ cấu hình Admin hoặc VietQR động */}
                     <div className="bank-qr-box">
                       <div className="qr-wrapper">
                         <img 
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=2|99|${bankAccount}|MB|${encodeURIComponent(bankAccountName)}|${confirmedBooking.totalPrice}|${confirmedBooking.bookingCode}`} 
+                          src={generateVietQRUrl({
+                            bankName,
+                            bankAccount,
+                            bankAccountName,
+                            amount: confirmedBooking.totalPrice,
+                            content: `${confirmedBooking.bookingCode} ${confirmedBooking.customerName ? confirmedBooking.customerName.replace(/\s+/g, '') : ''}`,
+                            customQrUrl: hotelSettings?.qrCodeUrl
+                          })} 
                           alt="VietQR Chuyển Khoản"
                           className="qr-image"
+                          onError={(e) => {
+                            if (hotelSettings?.qrCodeUrl && e.target.src.includes(hotelSettings.qrCodeUrl)) {
+                              e.target.src = generateVietQRUrl({
+                                bankName,
+                                bankAccount,
+                                bankAccountName,
+                                amount: confirmedBooking.totalPrice,
+                                content: `${confirmedBooking.bookingCode} ${confirmedBooking.customerName ? confirmedBooking.customerName.replace(/\s+/g, '') : ''}`,
+                                customQrUrl: ""
+                              });
+                            }
+                          }}
                         />
-                        <span className="qr-note">Quét mã QR bằng App Ngân Hàng</span>
+                        <span className="qr-note">
+                          {hotelSettings?.qrCodeUrl ? "Mã QR Thanh Toán Khách Sạn" : "Quét mã QR bằng App Ngân Hàng"}
+                        </span>
                       </div>
                     </div>
                   </div>

@@ -11,5 +11,6 @@
   "bankAccount": "0964880630",
   "bankAccountName": "NGUYEN THUY CHANG",
   "allowPayAtHotel": true,
-  "maintenanceMode": false
+  "maintenanceMode": false,
+  "qrCodeUrl": "/uploads/qr/vietqr-1792052713670-850393.png"
 }

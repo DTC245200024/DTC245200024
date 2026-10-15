@@ -41,7 +41,8 @@ export default function App() {
     hotelEmail: "nguyenthuychang519@gmail.com",
     bankName: "Ngân hàng TMCP Quân Đội (MB Bank)",
     bankAccount: "0964880630",
-    bankAccountName: "NGUYEN THUY CHANG"
+    bankAccountName: "NGUYEN THUY CHANG",
+    qrCodeUrl: ""
   });
 
   // Authentication State

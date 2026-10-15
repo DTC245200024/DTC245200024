@@ -27,7 +27,8 @@ function loadSystemSettings() {
     bankAccount: "0964880630",
     bankAccountName: "NGUYEN THUY CHANG",
     allowPayAtHotel: true,
-    maintenanceMode: false
+    maintenanceMode: false,
+    qrCodeUrl: ""
   };
 }
 
@@ -323,6 +324,84 @@ module.exports = {
       });
     } catch (error) {
       res.status(500).json({ success: false, message: "Lỗi khi lưu cấu hình hệ thống" });
+    }
+  },
+
+  // POST /api/auth/settings/qr-upload (Admin only: Upload VietQR Image)
+  async uploadQrCode(req, res) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: "Không tìm thấy tệp ảnh tải lên" });
+      }
+
+      // Xóa ảnh QR cũ nếu tồn tại trong thư mục uploads/qr
+      if (systemSettings.qrCodeUrl && systemSettings.qrCodeUrl.startsWith("/uploads/qr/")) {
+        const oldPath = path.join(__dirname, "..", systemSettings.qrCodeUrl);
+        if (fs.existsSync(oldPath)) {
+          try {
+            fs.unlinkSync(oldPath);
+          } catch (e) {
+            console.error("Không thể xóa ảnh QR cũ:", e);
+          }
+        }
+      }
+
+      const relativeUrl = `/uploads/qr/${req.file.filename}`;
+      systemSettings = {
+        ...systemSettings,
+        qrCodeUrl: relativeUrl
+      };
+      saveSystemSettings(systemSettings);
+
+      res.json({
+        success: true,
+        message: "Tải lên ảnh mã QR thanh toán VietQR thành công",
+        qrCodeUrl: relativeUrl,
+        data: {
+          qrCodeUrl: relativeUrl,
+          filename: req.file.filename,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+          settings: systemSettings
+        }
+      });
+    } catch (error) {
+      console.error("Lỗi khi upload QR code:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi tải lên ảnh QR: " + error.message });
+    }
+  },
+
+  // DELETE /api/auth/settings/qr-code (Admin only: Delete VietQR Image)
+  async deleteQrCode(req, res) {
+    try {
+      if (systemSettings.qrCodeUrl && systemSettings.qrCodeUrl.startsWith("/uploads/qr/")) {
+        const oldPath = path.join(__dirname, "..", systemSettings.qrCodeUrl);
+        if (fs.existsSync(oldPath)) {
+          try {
+            fs.unlinkSync(oldPath);
+          } catch (e) {
+            console.error("Lỗi khi xóa tệp ảnh QR:", e);
+          }
+        }
+      }
+
+      systemSettings = {
+        ...systemSettings,
+        qrCodeUrl: ""
+      };
+      saveSystemSettings(systemSettings);
+
+      res.json({
+        success: true,
+        message: "Đã xóa ảnh mã QR thanh toán thành công",
+        data: {
+          qrCodeUrl: "",
+          settings: systemSettings
+        }
+      });
+    } catch (error) {
+      console.error("Lỗi khi xóa QR code:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xóa ảnh QR: " + error.message });
     }
   },
 

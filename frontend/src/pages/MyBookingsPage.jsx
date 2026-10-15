@@ -4,7 +4,7 @@ import {
   RefreshCw, CheckCircle2, Clock, ArrowRight, ShieldCheck, Copy, 
   CreditCard, Building, QrCode, Check, LogOut, Key, AlertCircle, AlertTriangle, XCircle
 } from "lucide-react";
-import { formatCurrency, formatDate, getStatusBadge, getTodayDateString } from "../utils/formatters";
+import { formatCurrency, formatDate, getStatusBadge, getTodayDateString, generateVietQRUrl } from "../utils/formatters";
 import { bookingApi } from "../services/api";
 
 export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hotelSettings }) {
@@ -659,9 +659,28 @@ export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hot
                       </div>
                       <div className="bank-qr-box">
                         <img 
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=2|99|${bankAccount}|MB|${encodeURIComponent(bankAccountName)}|${payingBooking.totalPrice}|${payingBooking.bookingCode}`} 
+                          src={generateVietQRUrl({
+                            bankName,
+                            bankAccount,
+                            bankAccountName,
+                            amount: payingBooking.totalPrice,
+                            content: `${payingBooking.bookingCode} ${payingBooking.customerName ? payingBooking.customerName.replace(/\s+/g, "") : ""}`,
+                            customQrUrl: hotelSettings?.qrCodeUrl
+                          })} 
                           alt="VietQR"
                           className="qr-image"
+                          onError={(e) => {
+                            if (hotelSettings?.qrCodeUrl && e.target.src.includes(hotelSettings.qrCodeUrl)) {
+                              e.target.src = generateVietQRUrl({
+                                bankName,
+                                bankAccount,
+                                bankAccountName,
+                                amount: payingBooking.totalPrice,
+                                content: `${payingBooking.bookingCode} ${payingBooking.customerName ? payingBooking.customerName.replace(/\s+/g, "") : ""}`,
+                                customQrUrl: ""
+                              });
+                            }
+                          }}
                         />
                       </div>
                     </div>

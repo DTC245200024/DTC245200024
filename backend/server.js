@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const fs = require("fs");
 
 const roomRoutes = require("./routes/rooms");
 const bookingRoutes = require("./routes/bookings");
@@ -52,6 +53,13 @@ app.use("/api/*", (req, res) => {
     message: "API endpoint không tồn tại: " + req.originalUrl
   });
 });
+
+// Phục vụ tệp tĩnh ảnh tải lên (Ảnh mã QR VietQR, v.v.)
+const uploadsPath = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsPath)) {
+  fs.mkdirSync(uploadsPath, { recursive: true });
+}
+app.use("/uploads", express.static(uploadsPath));
 
 // Phục vụ giao diện Frontend tích hợp (gộp chung 1 link / 1 cổng)
 const frontendDistPath = path.join(__dirname, "../frontend/dist");
