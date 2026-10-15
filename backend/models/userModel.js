@@ -1,19 +1,87 @@
 const fs = require("fs").promises;
+const fsSync = require("fs");
 const path = require("path");
 
-const DATA_FILE = path.join(__dirname, "../data/users.json");
+const DATA_DIR = path.join(__dirname, "../data");
+const DATA_FILE = path.join(DATA_DIR, "users.json");
+
+function getDefaultUsers() {
+  const adminEmail = process.env.ADMIN_EMAIL || "admin@grandpalace.vn";
+  const adminPassword = process.env.ADMIN_PASSWORD || "Admin@123";
+
+  return [
+    {
+      id: "USR-1000",
+      name: "Quản Trị Viên (System Admin)",
+      email: adminEmail.toLowerCase().trim(),
+      phone: "19006868",
+      password: adminPassword,
+      role: "ADMIN",
+      status: "active",
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "STAFF-104",
+      name: "nguyen thi ngan",
+      email: "ngan@gmail.com",
+      phone: "123456789",
+      password: "123456",
+      role: "STAFF",
+      status: "active",
+      department: "Lễ tân",
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "USR-1005",
+      name: "Nguyễn Thị Vịt",
+      email: "vit@gmail.com",
+      phone: "123456097",
+      password: "123456",
+      role: "CUSTOMER",
+      status: "active",
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "USR-1004",
+      name: "nguyen van a",
+      email: "khachhang@gmail.com",
+      phone: "0124567678",
+      password: "password123",
+      role: "CUSTOMER",
+      status: "active",
+      createdAt: new Date().toISOString()
+    }
+  ];
+}
 
 async function readUsers() {
   try {
+    if (!fsSync.existsSync(DATA_DIR)) {
+      fsSync.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fsSync.existsSync(DATA_FILE)) {
+      const defaults = getDefaultUsers();
+      await fs.writeFile(DATA_FILE, JSON.stringify(defaults, null, 2), "utf-8");
+      return defaults;
+    }
     const data = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      const defaults = getDefaultUsers();
+      await fs.writeFile(DATA_FILE, JSON.stringify(defaults, null, 2), "utf-8");
+      return defaults;
+    }
+    return parsed;
   } catch (error) {
-    console.error("Error reading users data:", error);
-    return [];
+    console.error("Error reading users data, using default accounts:", error);
+    return getDefaultUsers();
   }
 }
 
 async function writeUsers(users) {
+  if (!fsSync.existsSync(DATA_DIR)) {
+    fsSync.mkdirSync(DATA_DIR, { recursive: true });
+  }
   await fs.writeFile(DATA_FILE, JSON.stringify(users, null, 2), "utf-8");
 }
 

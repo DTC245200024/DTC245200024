@@ -4,6 +4,7 @@
   "description": "Hệ thống Đặt phòng Khách sạn - Đề 6",
   "scripts": {
     "start": "npm run start:backend",
+    "build": "cd frontend && npm install && npm run build && cd ../backend && npm install",
     "start:backend": "cd backend && npm start",
     "start:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",

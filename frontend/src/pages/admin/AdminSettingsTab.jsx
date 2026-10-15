@@ -4,7 +4,7 @@ import {
   CreditCard, RefreshCw, CheckCircle2, Upload, Trash2,
   Eye, Image as ImageIcon, AlertCircle, X, QrCode, Sparkles, ExternalLink
 } from "lucide-react";
-import { authApi } from "../../services/api";
+import { authApi, getFullMediaUrl } from "../../services/api";
 import { generateVietQRUrl } from "../../utils/formatters";
 
 export default function AdminSettingsTab({ onToast, onReloadSettings }) {
@@ -68,11 +68,7 @@ export default function AdminSettingsTab({ onToast, onReloadSettings }) {
 
   // Get full displayable image URL
   const getFullImageUrl = (url) => {
-    if (!url) return "";
-    if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:") || url.startsWith("blob:")) {
-      return url;
-    }
-    return `http://localhost:5001${url.startsWith("/") ? url : "/" + url}`;
+    return getFullMediaUrl(url);
   };
 
   // Active QR image URL (preview from file or server url)

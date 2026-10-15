@@ -1,5 +1,27 @@
 // API Service connecting to Backend REST APIs with RBAC Headers
-const API_BASE = "http://localhost:5001/api";
+// Production: Uses import.meta.env.VITE_API_URL or defaults to relative "/api" (same origin)
+// Development: Defaults to "http://localhost:5001/api"
+const rawEnvApiUrl = typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL 
+  ? String(import.meta.env.VITE_API_URL).trim() 
+  : "";
+
+export const API_BASE = rawEnvApiUrl 
+  ? (rawEnvApiUrl.replace(/\/+$/, "") + (rawEnvApiUrl.endsWith("/api") ? "" : "/api"))
+  : (import.meta.env.PROD ? "/api" : "http://localhost:5001/api");
+
+export const SERVER_BASE = rawEnvApiUrl 
+  ? rawEnvApiUrl.replace(/\/api\/?$/, "").replace(/\/+$/, "")
+  : (import.meta.env.PROD ? "" : "http://localhost:5001");
+
+export function getFullMediaUrl(url) {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+  const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return `${SERVER_BASE}${cleanPath}`;
+}
 
 function getAuthHeaders() {
   try {

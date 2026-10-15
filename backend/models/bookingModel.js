@@ -1,13 +1,23 @@
 const fs = require("fs").promises;
+const fsSync = require("fs");
 const path = require("path");
 const User = require("./userModel");
 
-const DATA_FILE = path.join(__dirname, "../data/bookings.json");
+const DATA_DIR = path.join(__dirname, "../data");
+const DATA_FILE = path.join(DATA_DIR, "bookings.json");
 
 async function readBookings() {
   try {
+    if (!fsSync.existsSync(DATA_DIR)) {
+      fsSync.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fsSync.existsSync(DATA_FILE)) {
+      await fs.writeFile(DATA_FILE, "[]", "utf-8");
+      return [];
+    }
     const data = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
     console.error("Error reading bookings data:", error);
     return [];
@@ -15,6 +25,9 @@ async function readBookings() {
 }
 
 async function writeBookings(bookings) {
+  if (!fsSync.existsSync(DATA_DIR)) {
+    fsSync.mkdirSync(DATA_DIR, { recursive: true });
+  }
   await fs.writeFile(DATA_FILE, JSON.stringify(bookings, null, 2), "utf-8");
 }
 

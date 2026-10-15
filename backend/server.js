@@ -12,9 +12,35 @@ const bookingController = require("./controllers/bookingController");
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// Fully permissive CORS for development pair programming
+// Cấu hình CORS linh hoạt cho Production (Render) và Local Development
+const clientEnv = process.env.CLIENT_URL || process.env.FRONTEND_URL;
+const allowedOrigins = clientEnv 
+  ? clientEnv.split(",").map(url => url.trim().replace(/\/+$/, "")) 
+  : null;
+
 app.use(cors({
-  origin: "*",
+  origin: function (origin, callback) {
+    // Cho phép request không có origin (same-origin, mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    
+    // Nếu có danh sách cấu hình cụ thể
+    if (allowedOrigins && (allowedOrigins.includes("*") || allowedOrigins.includes(origin))) {
+      return callback(null, true);
+    }
+
+    // Tự động cho phép localhost và các domain deploy trên render.com
+    if (
+      origin.includes("localhost") || 
+      origin.includes("127.0.0.1") || 
+      origin.endsWith(".onrender.com")
+    ) {
+      return callback(null, true);
+    }
+
+    // Fallback cho phép an toàn để không chặn nhầm frontend
+    return callback(null, true);
+  },
+  credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-user-id", "x-user-role", "*"]
 }));
@@ -56,19 +82,22 @@ app.use("/api/*", (req, res) => {
 
 // Phục vụ tệp tĩnh ảnh tải lên (Ảnh mã QR VietQR, v.v.)
 const uploadsPath = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsPath)) {
-  fs.mkdirSync(uploadsPath, { recursive: true });
+const qrUploadsPath = path.join(uploadsPath, "qr");
+if (!fs.existsSync(qrUploadsPath)) {
+  fs.mkdirSync(qrUploadsPath, { recursive: true });
 }
 app.use("/uploads", express.static(uploadsPath));
 
-// Phục vụ giao diện Frontend tích hợp (gộp chung 1 link / 1 cổng)
+// Phục vụ giao diện Frontend tích hợp (khi build monorepo hoặc chạy 1 link duy nhất trên Render)
 const frontendDistPath = path.join(__dirname, "../frontend/dist");
-app.use(express.static(frontendDistPath));
+if (fs.existsSync(frontendDistPath)) {
+  app.use(express.static(frontendDistPath));
 
-app.get("*", (req, res, next) => {
-  if (req.path.startsWith("/api")) return next();
-  res.sendFile(path.join(frontendDistPath, "index.html"));
-});
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) return next();
+    res.sendFile(path.join(frontendDistPath, "index.html"));
+  });
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {

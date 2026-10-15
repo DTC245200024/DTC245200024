@@ -207,7 +207,13 @@ export function generateVietQRUrl({ bankName, bankAccount, bankAccountName, amou
     if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
       return url;
     }
-    return `http://localhost:5001${url.startsWith("/") ? url : "/" + url}`;
+    const rawEnv = typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL 
+      ? String(import.meta.env.VITE_API_URL).trim() 
+      : "";
+    const serverBase = rawEnv 
+      ? rawEnv.replace(/\/api\/?$/, "").replace(/\/+$/, "")
+      : (typeof import.meta !== "undefined" && import.meta.env?.PROD ? "" : "http://localhost:5001");
+    return `${serverBase}${url.startsWith("/") ? url : "/" + url}`;
   }
 
   const bankCode = getVietQRBankCode(bankName);
