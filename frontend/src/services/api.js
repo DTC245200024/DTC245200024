@@ -222,6 +222,13 @@ export const bookingApi = {
     });
   },
 
+  confirmPayment: async (id, data = {}) => {
+    return request(`/bookings/${id}/payment`, {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+  },
+
   update: async (id, bookingData) => {
     return request(`/bookings/${id}`, {
       method: "PUT",

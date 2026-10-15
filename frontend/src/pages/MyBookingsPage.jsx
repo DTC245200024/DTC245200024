@@ -17,8 +17,7 @@ export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hot
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBooking, setSelectedBooking] = useState(null);
   
-  // Modals state for Check-in & Check-out requests
-  const [checkInRequestBooking, setCheckInRequestBooking] = useState(null);
+  // Modal state for Check-out requests
   const [checkoutRequestBooking, setCheckoutRequestBooking] = useState(null);
   const [isSubmittingReq, setIsSubmittingReq] = useState(false);
 
@@ -40,7 +39,13 @@ export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hot
       setLoading(true);
       const res = await bookingApi.getAll();
       if (res.success) {
-        const myData = res.data.filter(b => {
+        const myData = res.data
+          .map(b => (
+            b.status === "Khách yêu cầu nhận phòng"
+              ? { ...b, status: "Đã xác nhận", checkInStatus: "Chưa nhận phòng" }
+              : b
+          ))
+          .filter(b => {
           if (!currentUser) return false;
           const matchUserId = b.userId && currentUser.id && b.userId === currentUser.id;
           const matchEmail = b.email && currentUser.email && b.email.toLowerCase() === currentUser.email.toLowerCase();
@@ -64,38 +69,7 @@ export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hot
     }
   }, [currentUser]);
 
-  // 1. Customer Send Check-in Request
-  const handleSendCheckInRequest = async () => {
-    if (!checkInRequestBooking) return;
-    const bookingId = checkInRequestBooking.id || checkInRequestBooking.bookingCode;
-
-    try {
-      setIsSubmittingReq(true);
-      const res = await bookingApi.requestCheckIn(bookingId, {
-        customerName: currentUser?.name || checkInRequestBooking.customerName
-      });
-
-      if (res.success) {
-        setBookings(prev => prev.map(b => (b.id === bookingId || b.bookingCode === bookingId) 
-          ? { ...b, status: "Khách yêu cầu nhận phòng", checkInStatus: "Chờ lễ tân xác nhận" } 
-          : b
-        ));
-        setCheckInRequestBooking(null);
-        if (onToast) onToast({ 
-          type: "success", 
-          message: "Đã gửi yêu cầu nhận phòng. Vui lòng chờ Lễ tân xác nhận." 
-        });
-      } else {
-        if (onToast) onToast({ type: "error", message: res.message || "Lỗi khi gửi yêu cầu" });
-      }
-    } catch (err) {
-      if (onToast) onToast({ type: "error", message: "Lỗi kết nối: " + err.message });
-    } finally {
-      setIsSubmittingReq(false);
-    }
-  };
-
-  // 2. Customer Send Check-out Request
+  // Customer Send Check-out Request
   const handleSendCheckoutRequest = async () => {
     if (!checkoutRequestBooking) return;
     const bookingId = checkoutRequestBooking.id || checkoutRequestBooking.bookingCode;
@@ -300,7 +274,6 @@ export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hot
 
               // Precise Check-in state evaluation
               const isCheckedIn = b.checkInStatus === "Đã nhận phòng" || b.status === "Đã nhận phòng" || b.status === "Khách yêu cầu trả phòng" || b.status === "Đã trả phòng";
-              const isCheckInPending = b.checkInStatus === "Chờ lễ tân xác nhận" || b.status === "Khách yêu cầu nhận phòng";
               
               // Precise Check-out state evaluation
               const isCheckedOut = b.checkOutStatus === "Đã trả phòng" || b.status === "Đã trả phòng";
@@ -344,8 +317,6 @@ export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hot
                         <span className="indicator-label">Trạng thái nhận phòng:</span>
                         {isCheckedIn ? (
                           <span className="indicator-badge badge-status-done">Đã nhận phòng ✓</span>
-                        ) : isCheckInPending ? (
-                          <span className="indicator-badge badge-status-pending">Chờ lễ tân xác nhận</span>
                         ) : (
                           <span className="indicator-badge badge-status-notyet">Chưa nhận phòng</span>
                         )}
@@ -372,18 +343,6 @@ export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hot
                     </div>
 
                     <div className="action-btns-row">
-                      {/* Button 1: Request Check-in (Only when booking is confirmed but not checked in) */}
-                      {b.status === "Đã xác nhận" && !isCheckedIn && !isCheckInPending && (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm btn-action-blue"
-                          onClick={() => setCheckInRequestBooking(b)}
-                          title="Gửi yêu cầu nhận phòng đến Lễ tân"
-                        >
-                          <Key size={14} />
-                          <span>Yêu cầu nhận phòng</span>
-                        </button>
-                      )}
 
                       {/* Button 2: Request Check-out (ONLY available when customer HAS ALREADY checked in) */}
                       {isCheckedIn && !isCheckedOut && !isCheckOutPending && (
@@ -438,75 +397,7 @@ export default function MyBookingsPage({ currentUser, setActiveTab, onToast, hot
           </div>
         )}
 
-        {/* MODAL 1: Customer Request Check-in Confirmation */}
-        {checkInRequestBooking && (
-          <div className="modal-overlay" onClick={() => !isSubmittingReq && setCheckInRequestBooking(null)}>
-            <div className="modal-content card-glass max-w-500 confirm-dialog-card" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <div className="flex-align-center gap-2">
-                  <div className="confirm-bubble-icon bg-blue-light text-blue">
-                    <Key size={22} />
-                  </div>
-                  <div>
-                    <h3 className="modal-title font-serif m-0">Yêu Cầu Nhận Phòng</h3>
-                    <small className="text-muted">Đơn #{checkInRequestBooking.bookingCode || checkInRequestBooking.id}</small>
-                  </div>
-                </div>
-                <button type="button" className="modal-close-btn" onClick={() => setCheckInRequestBooking(null)}>✕</button>
-              </div>
-
-              <div className="modal-body pt-2 pb-2">
-                <p className="text-muted font-size-sm mb-3">
-                  Xác nhận gửi yêu cầu nhận phòng đến quầy Lễ tân khách sạn {hotelName}:
-                </p>
-
-                <div className="confirm-details-box">
-                  <div className="c-info-row">
-                    <span className="c-label">Phòng nghỉ:</span>
-                    <strong className="c-value text-gold">{checkInRequestBooking.roomName}</strong>
-                  </div>
-                  <div className="c-info-row">
-                    <span className="c-label">Ngày nhận phòng:</span>
-                    <span className="c-value">{checkInRequestBooking.checkIn} (từ 14:00)</span>
-                  </div>
-                  <div className="c-info-row">
-                    <span className="c-label">Ngày trả phòng:</span>
-                    <span className="c-value">{checkInRequestBooking.checkOut} (trước 12:00)</span>
-                  </div>
-                  <div className="c-info-row border-top-dashed pt-2 mt-1">
-                    <span className="c-label">Trạng thái nhận phòng:</span>
-                    <strong className="c-value text-blue">Chờ lễ tân xác nhận</strong>
-                  </div>
-                </div>
-
-                <div className="info-sub-box mt-3 p-2 bg-light-soft rounded font-size-xs text-muted">
-                  ℹ Lễ tân sẽ kiểm tra phòng sạch và thực hiện bàn giao chìa khóa cho quý khách.
-                </div>
-              </div>
-
-              <div className="modal-footer pt-3 gap-2">
-                <button 
-                  type="button" 
-                  className="btn btn-secondary flex-1" 
-                  onClick={() => setCheckInRequestBooking(null)}
-                  disabled={isSubmittingReq}
-                >
-                  Hủy
-                </button>
-                <button 
-                  type="button" 
-                  className="btn btn-primary flex-1 btn-blue-glow" 
-                  onClick={handleSendCheckInRequest}
-                  disabled={isSubmittingReq}
-                >
-                  {isSubmittingReq ? "Đang gửi..." : "Gửi yêu cầu nhận phòng"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL 2: Customer Request Check-out Confirmation */}
+        {/* MODAL: Customer Request Check-out Confirmation */}
         {checkoutRequestBooking && (
           <div className="modal-overlay" onClick={() => !isSubmittingReq && setCheckoutRequestBooking(null)}>
             <div className="modal-content card-glass max-w-500 confirm-dialog-card" onClick={(e) => e.stopPropagation()}>

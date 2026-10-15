@@ -154,19 +154,19 @@ export default function StaffDashboardTab({
                     <td><strong className="text-gold">{formatCurrency(b.totalPrice)}</strong></td>
                     <td>
                       <span className={`badge badge-${
-                        b.status === "Đã xác nhận" ? "info" :
+                        (b.status === "Đã xác nhận" || b.status === "Khách yêu cầu nhận phòng") ? "info" :
                         b.status === "Đã nhận phòng" ? "success" :
                         b.status === "Đã thanh toán" ? "success" :
                         b.status === "Đã trả phòng" ? "secondary" :
                         b.status === "Đã hủy" ? "danger" : "warning"
                       }`}>
-                        {b.status}
+                        {b.status === "Khách yêu cầu nhận phòng" ? "Đã xác nhận" : b.status}
                       </span>
                     </td>
                     <td className="text-right">
                       <button 
                         className="btn btn-gold btn-sm"
-                        onClick={() => onSelectBookingFilter(b.status || "Tất cả")}
+                        onClick={() => onSelectBookingFilter(b.status === "Khách yêu cầu nhận phòng" ? "Đã xác nhận" : (b.status || "Tất cả"))}
                       >
                         <Eye size={14} /> Xử lý đơn
                       </button>

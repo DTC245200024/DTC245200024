@@ -6,14 +6,27 @@ module.exports = {
   // GET /api/bookings
   async getAllBookings(req, res) {
     try {
-      const { status, search } = req.query;
-      const bookings = await Booking.getAll({ status, search });
+      const { status, search, userId } = req.query;
+      const userRole = (req.headers["x-user-role"] || "").toUpperCase();
+      const currentUserId = req.headers["x-user-id"];
+
+      const filters = { status, search };
+      
+      // Nếu là khách hàng thông thường truy vấn, chỉ trả về các đơn của khách đó
+      if (userRole === "CUSTOMER" && currentUserId) {
+        filters.userId = currentUserId;
+      } else if (userId) {
+        filters.userId = userId;
+      }
+
+      const bookings = await Booking.getAll(filters);
       res.json({
         success: true,
         count: bookings.length,
         data: bookings
       });
     } catch (error) {
+      console.error("Error in getAllBookings:", error);
       res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy danh sách đặt phòng" });
     }
   },
@@ -27,6 +40,7 @@ module.exports = {
       }
       res.json({ success: true, data: booking });
     } catch (error) {
+      console.error("Error in getBookingById:", error);
       res.status(500).json({ success: false, message: "Lỗi khi lấy chi tiết đơn đặt phòng" });
     }
   },
@@ -34,7 +48,7 @@ module.exports = {
   // POST /api/bookings
   async createBooking(req, res) {
     try {
-      const { customerName, phone, email, roomId, checkIn, checkOut } = req.body;
+      const { customerName, phone, email, roomId, checkIn, checkOut, paymentMethod } = req.body;
       if (!customerName || !phone || !email || !roomId || !checkIn || !checkOut) {
         return res.status(400).json({
           success: false,
@@ -42,40 +56,69 @@ module.exports = {
         });
       }
 
-      const room = await Room.getById(roomId);
-      let roomPrice = req.body.roomPrice;
-      let roomName = req.body.roomName;
-      let roomType = req.body.roomType;
-
-      if (room) {
-        roomPrice = roomPrice || room.price;
-        roomName = roomName || room.name;
-        roomType = roomType || room.type;
+      // Kiểm tra tính hợp lệ của ngày đặt phòng
+      const inDate = new Date(checkIn);
+      const outDate = new Date(checkOut);
+      if (isNaN(inDate.getTime()) || isNaN(outDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "Định dạng ngày nhận hoặc ngày trả phòng không hợp lệ"
+        });
       }
 
+      if (outDate <= inDate) {
+        return res.status(400).json({
+          success: false,
+          message: "Ngày trả phòng phải sau ngày nhận phòng ít nhất 1 đêm"
+        });
+      }
+
+      const room = await Room.getById(roomId);
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: "Phòng khách sạn đã chọn không tồn tại hoặc đã ngừng phục vụ"
+        });
+      }
+
+      let roomPrice = req.body.roomPrice || room.price;
+      let roomName = req.body.roomName || room.name;
+      let roomType = req.body.roomType || room.type;
+
       let userId = req.body.userId || req.headers["x-user-id"] || null;
+      
+      // Chuẩn hóa phương thức thanh toán
+      const normalizedPaymentMethod = paymentMethod === "bank_transfer" ? "bank_transfer" : "cash";
+
+      // Phân biệt rõ trạng thái thanh toán theo nghiệp vụ (Requirement 2, 3, 6)
+      // Mặc định luôn là Chờ xác nhận chuyển khoản (đối với chuyển khoản) hoặc Chưa thanh toán (tại quầy)
+      const paymentStatus = normalizedPaymentMethod === "bank_transfer" 
+        ? "Chờ xác nhận chuyển khoản" 
+        : "Chưa thanh toán";
+
       const bookingPayload = {
         ...req.body,
         userId,
         roomPrice,
         roomName,
         roomType,
-        status: req.body.status || "Chờ xác nhận",
-        checkInStatus: req.body.checkInStatus || "Chưa nhận phòng",
-        checkOutStatus: req.body.checkOutStatus || "Chưa trả phòng",
-        paymentStatus: req.body.paymentStatus || (req.body.paymentMethod === "bank_transfer" ? "Đã thanh toán" : "Chờ thanh toán")
+        paymentMethod: normalizedPaymentMethod,
+        paymentStatus: paymentStatus,
+        status: "Chờ xác nhận", // Đơn mới luôn có trạng thái Chờ xác nhận (Pending)
+        checkInStatus: "Chưa nhận phòng",
+        checkOutStatus: "Chưa trả phòng"
       };
 
       const newBooking = await Booking.create(bookingPayload);
 
       res.status(201).json({
         success: true,
-        message: "Đặt phòng thành công! Mã đơn của bạn là " + newBooking.bookingCode,
+        message: "Đặt phòng thành công! Mã đơn của quý khách là " + newBooking.bookingCode + ". Đơn đang ở trạng thái Chờ xác nhận.",
         data: newBooking
       });
     } catch (error) {
       console.error("Error creating booking:", error);
-      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xử lý đặt phòng" });
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xử lý đặt phòng: " + error.message });
     }
   },
 
@@ -95,27 +138,127 @@ module.exports = {
         return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt phòng để xác nhận" });
       }
 
-      if (booking.status !== "Chờ xác nhận" && booking.status !== "Chờ thanh toán") {
+      // Kiểm tra trạng thái hiện tại (Requirement 5)
+      if (booking.status === "Đã xác nhận") {
+        return res.status(400).json({
+          success: false,
+          message: `Đơn đặt phòng ${booking.bookingCode} đã được xác nhận trước đó.`
+        });
+      }
+
+      if (booking.status === "Đã hủy") {
+        return res.status(400).json({
+          success: false,
+          message: "Đơn đặt phòng này đã bị hủy, không thể xác nhận."
+        });
+      }
+
+      if (booking.status === "Đã nhận phòng" || booking.status === "Đã trả phòng") {
         return res.status(400).json({
           success: false,
           message: `Đơn đặt phòng đang ở trạng thái "${booking.status}", không thể xác nhận lại.`
         });
       }
 
+      // Kiểm tra phòng tồn tại
+      const room = await Room.getById(booking.roomId);
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: "Phòng của đơn đặt không tồn tại trong hệ thống."
+        });
+      }
+
+      // Kiểm tra trùng lịch phòng (Requirement 5: Không cho xác nhận trùng hoặc đặt phòng bị trùng lịch)
+      const allBookings = await Booking.getAll();
+      const newIn = new Date(booking.checkIn);
+      const newOut = new Date(booking.checkOut);
+
+      const conflictBooking = allBookings.find(b => {
+        // Bỏ qua chính đơn này
+        if (b.id === booking.id || b.bookingCode === booking.bookingCode) return false;
+        if (b.roomId !== booking.roomId) return false;
+
+        // Chỉ xét các đơn đang chiếm giữ phòng
+        const isOccupying = ["Đã xác nhận", "Đã nhận phòng", "Khách yêu cầu trả phòng"].includes(b.status);
+        if (!isOccupying) return false;
+
+        const exIn = new Date(b.checkIn);
+        const exOut = new Date(b.checkOut);
+
+        // Công thức kiểm tra giao khoảng thời gian: newIn < exOut && newOut > exIn
+        return newIn < exOut && newOut > exIn;
+      });
+
+      if (conflictBooking) {
+        return res.status(400).json({
+          success: false,
+          message: `Không thể xác nhận: Phòng "${booking.roomName}" đã có đơn "${conflictBooking.bookingCode}" (Khách: ${conflictBooking.customerName}) đặt trùng lịch từ ${conflictBooking.checkIn} đến ${conflictBooking.checkOut}.`
+        });
+      }
+
+      // Cập nhật trạng thái đơn thành "Đã xác nhận"
+      // LƯU Ý (Requirement 6): Việc xác nhận đơn KHÔNG đồng nghĩa với xác nhận đã thanh toán -> GIỮ NGUYÊN paymentStatus
       const updated = await Booking.update(req.params.id, {
         status: "Đã xác nhận",
         checkInStatus: "Chưa nhận phòng",
         checkOutStatus: "Chưa trả phòng",
-        confirmedAt: new Date().toISOString()
+        confirmedAt: new Date().toISOString(),
+        confirmedBy: req.body.staffName || (userRole === "ADMIN" ? "Quản trị viên" : "Lễ tân")
       });
+
+      // Cập nhật tình trạng phòng sang "Đã đặt" nếu phòng đang trống
+      if (room.status === "Trống") {
+        await Room.update(booking.roomId, { status: "Đã đặt" });
+      }
 
       res.json({
         success: true,
-        message: "Đã xác nhận đơn đặt phòng thành công.",
+        message: `Đã xác nhận đơn đặt phòng ${updated.bookingCode} thành công.`,
         data: updated
       });
     } catch (error) {
-      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xác nhận đơn đặt phòng" });
+      console.error("Error confirming booking:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xác nhận đơn đặt phòng: " + error.message });
+    }
+  },
+
+  // PUT /api/bookings/:id/payment (Staff / Admin: Xác nhận thu tiền / thanh toán)
+  async confirmPayment(req, res) {
+    try {
+      const userRole = (req.headers["x-user-role"] || "").toUpperCase();
+      if (userRole && userRole !== "ADMIN" && userRole !== "STAFF") {
+        return res.status(403).json({
+          success: false,
+          message: "Chỉ Quản trị viên (ADMIN) hoặc Lễ tân (STAFF) mới có quyền xác nhận thanh toán."
+        });
+      }
+
+      const booking = await Booking.getById(req.params.id);
+      if (!booking) {
+        return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt phòng để cập nhật thanh toán" });
+      }
+
+      const updateData = {
+        paymentStatus: "Đã thanh toán",
+        paidAt: new Date().toISOString(),
+        paymentConfirmedBy: req.body.staffName || (userRole === "ADMIN" ? "Quản trị viên" : "Lễ tân")
+      };
+
+      if (req.body.paymentMethod) {
+        updateData.paymentMethod = req.body.paymentMethod;
+      }
+
+      const updated = await Booking.update(req.params.id, updateData);
+
+      res.json({
+        success: true,
+        message: `Đã xác nhận thanh toán thành công cho đơn ${updated.bookingCode}.`,
+        data: updated
+      });
+    } catch (error) {
+      console.error("Error confirming payment:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xác nhận thanh toán: " + error.message });
     }
   },
 
@@ -131,7 +274,7 @@ module.exports = {
         });
       }
 
-      // 1. Kiểm tra quyền sở hữu (Chỉ chủ đơn hoặc Admin/Lễ tân mới được hủy)
+      // 1. Kiểm tra quyền sở hữu (Chủ đơn hoặc Admin/Lễ tân)
       const requestingUserId = req.headers["x-user-id"] || req.body?.userId;
       const userRole = (req.headers["x-user-role"] || "").toUpperCase();
       const isStaffOrAdmin = userRole === "ADMIN" || userRole === "STAFF";
@@ -162,22 +305,22 @@ module.exports = {
         });
       }
 
-      // 2. Kiểm tra trạng thái đơn: Không cho phép hủy nếu Lễ tân đã xác nhận, đã nhận phòng, đã trả phòng hoặc đã hủy
+      // 2. Kiểm tra trạng thái đơn: Chỉ cho phép hủy khi đang Chờ xác nhận
       if (booking.status === "Đã xác nhận" || booking.confirmedAt) {
         return res.status(400).json({
           success: false,
-          message: "Đơn đặt phòng đã được Lễ tân xác nhận. Quý khách không thể tự hủy đơn này."
+          message: "Đơn đặt phòng đã được Lễ tân xác nhận. Quý khách không thể tự hủy đơn này. Vui lòng liên hệ quầy Lễ tân."
         });
       }
 
-      if (booking.status === "Đã nhận phòng" || booking.checkInStatus === "Đã nhận phòng" || booking.status === "Khách yêu cầu nhận phòng") {
+      if (booking.status === "Đã nhận phòng" || booking.checkInStatus === "Đã nhận phòng") {
         return res.status(400).json({
           success: false,
-          message: "Đơn đặt phòng đang trong quá trình nhận phòng hoặc đã nhận phòng, không thể hủy."
+          message: "Đơn đặt phòng đã làm thủ tục nhận phòng, không thể hủy."
         });
       }
 
-      if (booking.status === "Đã trả phòng" || booking.checkOutStatus === "Đã trả phòng" || booking.status === "Khách yêu cầu trả phòng") {
+      if (booking.status === "Đã trả phòng" || booking.checkOutStatus === "Đã trả phòng") {
         return res.status(400).json({
           success: false,
           message: "Đơn đặt phòng đã hoàn tất thủ tục trả phòng, không thể hủy."
@@ -191,7 +334,6 @@ module.exports = {
         });
       }
 
-      // Chỉ cho phép hủy khi trạng thái là "Chờ xác nhận"
       if (booking.status !== "Chờ xác nhận") {
         return res.status(400).json({
           success: false,
@@ -199,7 +341,7 @@ module.exports = {
         });
       }
 
-      // 3. Cập nhật trạng thái đơn thành "Đã hủy" (giữ nguyên thông tin thanh toán, không xóa hóa đơn)
+      // 3. Cập nhật trạng thái đơn thành "Đã hủy"
       const updateData = {
         status: "Đã hủy",
         cancelledAt: new Date().toISOString(),
@@ -224,11 +366,11 @@ module.exports = {
       });
     } catch (error) {
       console.error("Error cancelling booking:", error);
-      res.status(500).json({ success: false, message: "Lỗi máy chủ khi hủy đơn đặt phòng" });
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi hủy đơn đặt phòng: " + error.message });
     }
   },
 
-  // PUT /api/bookings/:id/request-checkin (Customer)
+  // PUT /api/bookings/:id/request-checkin (Customer - không đổi trạng thái sang 'Khách yêu cầu nhận phòng')
   async requestCheckIn(req, res) {
     try {
       const booking = await Booking.getById(req.params.id);
@@ -236,26 +378,28 @@ module.exports = {
         return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt phòng" });
       }
 
-      if (booking.status !== "Đã xác nhận" && booking.checkInStatus === "Đã nhận phòng") {
+      if (booking.status !== "Đã xác nhận") {
         return res.status(400).json({
           success: false,
-          message: `Không thể gửi yêu cầu nhận phòng cho đơn này.`
+          message: "Chỉ có thể làm thủ tục nhận phòng cho đơn đã được Lễ tân xác nhận."
         });
       }
 
-      const updated = await Booking.update(req.params.id, {
-        status: "Khách yêu cầu nhận phòng",
-        checkInStatus: "Chờ lễ tân xác nhận",
-        checkInRequestedAt: new Date().toISOString()
-      });
+      if (booking.checkInStatus === "Đã nhận phòng") {
+        return res.status(400).json({
+          success: false,
+          message: "Quý khách đã làm thủ tục nhận phòng trước đó."
+        });
+      }
 
       res.json({
         success: true,
-        message: "Đã gửi yêu cầu nhận phòng. Vui lòng chờ Lễ tân xác nhận.",
-        data: updated
+        message: "Đơn đặt phòng đã được xác nhận. Quý khách vui lòng xuất trình mã đơn tại quầy Lễ tân khi đến nhận phòng.",
+        data: booking
       });
     } catch (error) {
-      res.status(500).json({ success: false, message: "Lỗi khi gửi yêu cầu nhận phòng" });
+      console.error("Error in requestCheckIn:", error);
+      res.status(500).json({ success: false, message: "Lỗi khi xử lý yêu cầu nhận phòng" });
     }
   },
 
@@ -267,12 +411,11 @@ module.exports = {
         return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt phòng" });
       }
 
-      // Customer CANNOT request checkout if not checked in yet!
       const isCheckedIn = booking.checkInStatus === "Đã nhận phòng" || booking.status === "Đã nhận phòng";
       if (!isCheckedIn) {
         return res.status(400).json({
           success: false,
-          message: `Quý khách chưa hoàn tất thủ tục nhận phòng nên chưa thể gửi yêu cầu trả phòng.`
+          message: "Quý khách chưa hoàn tất thủ tục nhận phòng nên chưa thể gửi yêu cầu trả phòng."
         });
       }
 
@@ -291,11 +434,12 @@ module.exports = {
         data: updated
       });
     } catch (error) {
+      console.error("Error in requestCheckout:", error);
       res.status(500).json({ success: false, message: "Lỗi khi gửi yêu cầu trả phòng" });
     }
   },
 
-  // PUT /api/bookings/:id/checkin (Staff / Admin)
+  // PUT /api/bookings/:id/checkin (Staff / Admin làm thủ tục nhận phòng)
   async checkInBooking(req, res) {
     try {
       const userRole = (req.headers["x-user-role"] || "").toUpperCase();
@@ -311,7 +455,14 @@ module.exports = {
         return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt phòng" });
       }
 
-      // Không cho phép nhận phòng lặp lại hoặc khi đã ở trạng thái cuối
+      // Requirement 7: Chỉ cho phép check-in khi đơn ĐÃ ĐƯỢC XÁC NHẬN
+      if (booking.status === "Chờ xác nhận") {
+        return res.status(400).json({
+          success: false,
+          message: "Đơn đặt phòng đang ở trạng thái 'Chờ xác nhận'. Vui lòng kiểm tra và duyệt xác nhận đơn trước khi làm thủ tục nhận phòng."
+        });
+      }
+
       if (booking.status === "Đã nhận phòng" || booking.checkInStatus === "Đã nhận phòng") {
         return res.status(400).json({
           success: false,
@@ -333,26 +484,62 @@ module.exports = {
         });
       }
 
+      // Phải ở trạng thái "Đã xác nhận"
+      if (booking.status !== "Đã xác nhận") {
+        return res.status(400).json({
+          success: false,
+          message: `Chỉ được thực hiện nhận phòng khi đơn đặt phòng đã được xác nhận (Trạng thái hiện tại: "${booking.status}").`
+        });
+      }
+
+      // Requirement 7: Kiểm tra điều kiện ngày nhận phòng
+      const todayStr = new Date().toISOString().split("T")[0];
+      if (todayStr < booking.checkIn && !req.body.forceEarlyCheckIn) {
+        return res.status(400).json({
+          success: false,
+          message: `Chưa đến ngày nhận phòng (${booking.checkIn}). Ngày hiện tại là ${todayStr}. Quý khách vui lòng làm thủ tục vào đúng ngày nhận phòng.`
+        });
+      }
+
+      // Kiểm tra xem phòng có đang bị khách khác sử dụng chưa trả không
+      const allBookings = await Booking.getAll();
+      const currentOccupant = allBookings.find(b => 
+        b.roomId === booking.roomId && 
+        b.id !== booking.id && 
+        b.bookingCode !== booking.bookingCode &&
+        (b.status === "Đã nhận phòng" || b.checkInStatus === "Đã nhận phòng") &&
+        b.status !== "Đã trả phòng"
+      );
+
+      if (currentOccupant) {
+        return res.status(400).json({
+          success: false,
+          message: `Phòng ${booking.roomName} hiện đang có khách lưu trú (Đơn ${currentOccupant.bookingCode} - ${currentOccupant.customerName}). Vui lòng hoàn tất thủ tục trả phòng cho khách trước khi làm thủ tục nhận phòng mới.`
+        });
+      }
+
+      // Cập nhật trạng thái đơn sang "Đã nhận phòng"
       const updated = await Booking.update(req.params.id, {
         status: "Đã nhận phòng",
         checkInStatus: "Đã nhận phòng",
         checkOutStatus: "Chưa trả phòng",
         actualCheckInTime: new Date().toISOString(),
-        checkedInBy: req.body.staffName || "Lễ tân"
+        checkedInBy: req.body.staffName || (userRole === "ADMIN" ? "Quản trị viên" : "Lễ tân")
       });
 
-      // Update room status to "Đang sử dụng"
+      // Cập nhật trạng thái phòng sang "Đang sử dụng"
       if (booking.roomId) {
         await Room.update(booking.roomId, { status: "Đang sử dụng" });
       }
 
       res.json({
         success: true,
-        message: "Thực hiện thủ tục nhận phòng thành công!",
+        message: `Thực hiện thủ tục nhận phòng thành công cho đơn ${updated.bookingCode}!`,
         data: updated
       });
     } catch (error) {
-      res.status(500).json({ success: false, message: "Lỗi khi xử lý nhận phòng" });
+      console.error("Error in checkInBooking:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xử lý nhận phòng: " + error.message });
     }
   },
 
@@ -389,7 +576,7 @@ module.exports = {
         });
       }
 
-      // Check payment status
+      // Kiểm tra trạng thái thanh toán trước khi trả phòng (Requirement 6)
       const isPaid = booking.paymentStatus === "Đã thanh toán" || req.body.processPayment === true;
       if (!isPaid) {
         return res.status(400).json({
@@ -405,21 +592,22 @@ module.exports = {
         checkOutStatus: "Đã trả phòng",
         paymentStatus: "Đã thanh toán",
         actualCheckOutTime: new Date().toISOString(),
-        checkedOutBy: req.body.staffName || "Lễ tân"
+        checkedOutBy: req.body.staffName || (userRole === "ADMIN" ? "Quản trị viên" : "Lễ tân")
       });
 
-      // Update room status sang "Đang dọn dẹp" (cần dọn dẹp) theo quy tắc nghiệp vụ khách sạn
+      // Cập nhật phòng sang "Đang dọn dẹp"
       if (booking.roomId) {
         await Room.update(booking.roomId, { status: "Đang dọn dẹp" });
       }
 
       res.json({
         success: true,
-        message: "Đã xác nhận trả phòng thành công. Phòng đã chuyển sang trạng thái Đang dọn dẹp.",
+        message: `Đã xác nhận trả phòng thành công cho đơn ${updated.bookingCode}. Phòng đã chuyển sang trạng thái Đang dọn dẹp.`,
         data: updated
       });
     } catch (error) {
-      res.status(500).json({ success: false, message: "Lỗi khi xử lý trả phòng" });
+      console.error("Error in checkOutBooking:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xử lý trả phòng: " + error.message });
     }
   },
 
@@ -429,17 +617,20 @@ module.exports = {
       if (req.body && req.body.status === "Đã hủy") {
         return module.exports.cancelBooking(req, res);
       }
+
       const updated = await Booking.update(req.params.id, req.body);
       if (!updated) {
         return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt phòng để cập nhật" });
       }
+
       res.json({
         success: true,
         message: "Cập nhật đơn đặt phòng thành công",
         data: updated
       });
     } catch (error) {
-      res.status(500).json({ success: false, message: "Lỗi khi cập nhật đơn đặt phòng" });
+      console.error("Error updating booking:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi cập nhật đơn đặt phòng: " + error.message });
     }
   },
 
@@ -450,56 +641,63 @@ module.exports = {
       if (!success) {
         return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt phòng để xóa" });
       }
+
       res.json({
         success: true,
-        message: "Xóa đơn đặt phòng thành công"
+        message: "Đã xóa đơn đặt phòng thành công"
       });
     } catch (error) {
-      res.status(500).json({ success: false, message: "Lỗi khi xóa đơn đặt phòng" });
+      console.error("Error deleting booking:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi xóa đơn đặt phòng: " + error.message });
     }
   },
 
-  // GET /api/stats (Admin Dashboard metrics)
+  // GET /api/stats (Dashboard statistics)
   async getDashboardStats(req, res) {
     try {
-      const rooms = await Room.getAll();
       const bookings = await Booking.getAll();
-      const users = await User.getAll();
+      const rooms = await Room.getAll();
+
+      const totalBookings = bookings.length;
+      const pendingBookings = bookings.filter(b => b.status === "Chờ xác nhận").length;
+      const confirmedBookings = bookings.filter(b => b.status === "Đã xác nhận").length;
+      const inUseBookings = bookings.filter(b => b.status === "Đã nhận phòng" || b.checkInStatus === "Đã nhận phòng").length;
+      const completedBookings = bookings.filter(b => b.status === "Đã trả phòng").length;
+      const cancelledBookings = bookings.filter(b => b.status === "Đã hủy").length;
+
+      // Doanh thu chỉ tính các đơn đã thanh toán hoặc đã hoàn tất trả phòng
+      const revenue = bookings
+        .filter(b => b.paymentStatus === "Đã thanh toán" && b.status !== "Đã hủy")
+        .reduce((sum, b) => sum + (Number(b.totalPrice) || 0), 0);
 
       const totalRooms = rooms.length;
       const availableRooms = rooms.filter(r => r.status === "Trống").length;
-      const bookedRooms = rooms.filter(r => r.status === "Đã đặt" || r.status === "Đang sử dụng").length;
-      const maintenanceRooms = rooms.filter(r => r.status === "Đang bảo trì").length;
-
-      const customers = users.filter(u => u.role === "CUSTOMER");
-      const totalCustomers = customers.length;
-
-      const totalBookings = bookings.length;
-      const pendingConfirmation = bookings.filter(b => b.status === "Chờ xác nhận").length;
-      const pendingPayment = bookings.filter(b => b.status === "Chờ thanh toán").length;
-      const confirmedBookings = bookings.filter(b => b.status === "Đã xác nhận" || b.status === "Đã nhận phòng" || b.status === "Khách yêu cầu nhận phòng" || b.status === "Khách yêu cầu trả phòng" || b.status === "Đã thanh toán").length;
-      
-      const totalRevenue = bookings
-        .filter(b => b.status !== "Đã hủy")
-        .reduce((sum, b) => sum + (Number(b.totalPrice) || 0), 0);
+      const bookedRooms = rooms.filter(r => r.status === "Đã đặt").length;
+      const occupiedRooms = rooms.filter(r => r.status === "Đang sử dụng").length;
+      const cleaningRooms = rooms.filter(r => r.status === "Đang dọn dẹp").length;
 
       res.json({
         success: true,
         data: {
-          totalRooms,
-          availableRooms,
-          bookedRooms,
-          maintenanceRooms,
-          totalCustomers,
           totalBookings,
-          pendingConfirmation,
-          pendingPayment,
+          pendingBookings,
           confirmedBookings,
-          totalRevenue
+          inUseBookings,
+          completedBookings,
+          cancelledBookings,
+          revenue,
+          rooms: {
+            total: totalRooms,
+            available: availableRooms,
+            booked: bookedRooms,
+            occupied: occupiedRooms,
+            cleaning: cleaningRooms
+          }
         }
       });
     } catch (error) {
-      res.status(500).json({ success: false, message: "Lỗi khi lấy thống kê" });
+      console.error("Error getting stats:", error);
+      res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy thống kê" });
     }
   }
 };

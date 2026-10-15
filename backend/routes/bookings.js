@@ -13,6 +13,7 @@ router.put("/:id/request-checkout", bookingController.requestCheckout);
 
 // Staff / Admin endpoints
 router.put("/:id/confirm", bookingController.confirmBooking);
+router.put("/:id/payment", bookingController.confirmPayment);
 router.put("/:id/checkin", bookingController.checkInBooking);
 router.put("/:id/checkout", bookingController.checkOutBooking);
 

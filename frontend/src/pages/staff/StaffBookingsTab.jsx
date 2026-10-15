@@ -72,7 +72,7 @@ export default function StaffBookingsTab({ currentUser, initialFilter = "Tất c
         if (onToast) onToast({ type: "error", message: res.message || "Lỗi khi xác nhận đơn" });
       }
     } catch (err) {
-      if (onToast) onToast({ type: "error", message: "Lỗi kết nối: " + err.message });
+      if (onToast) onToast({ type: "error", message: err.message || "Lỗi khi xác nhận đơn" });
     } finally {
       setIsUpdating(false);
     }
@@ -87,11 +87,12 @@ export default function StaffBookingsTab({ currentUser, initialFilter = "Tất c
     }
     if (status === "Đã xác nhận") {
       return (
-        (b.status === "Đã xác nhận" || (b.status === "Đã thanh toán" && b.checkInStatus !== "Đã nhận phòng")) &&
+        (b.status === "Đã xác nhận" || b.status === "Khách yêu cầu nhận phòng" || (b.status === "Đã thanh toán" && b.checkInStatus !== "Đã nhận phòng")) &&
         b.checkInStatus !== "Đã nhận phòng" &&
         b.status !== "Đã nhận phòng" &&
         b.status !== "Đã trả phòng" &&
         b.checkOutStatus !== "Đã trả phòng" &&
+        b.status !== "Khách yêu cầu trả phòng" &&
         b.status !== "Đã hủy"
       );
     }
@@ -134,7 +135,7 @@ export default function StaffBookingsTab({ currentUser, initialFilter = "Tất c
         if (onToast) onToast({ type: "error", message: res.message || "Lỗi khi nhận phòng" });
       }
     } catch (err) {
-      if (onToast) onToast({ type: "error", message: "Lỗi kết nối: " + err.message });
+      if (onToast) onToast({ type: "error", message: err.message || "Lỗi khi làm thủ tục nhận phòng" });
     } finally {
       setIsUpdating(false);
     }
@@ -144,19 +145,27 @@ export default function StaffBookingsTab({ currentUser, initialFilter = "Tất c
   const handleProcessPayment = async (bookingId) => {
     try {
       setIsUpdating(true);
-      const res = await bookingApi.update(bookingId, {
-        paymentStatus: "Đã thanh toán",
-        paidAt: new Date().toISOString()
+      const res = await bookingApi.confirmPayment(bookingId, {
+        staffName: currentUser?.name || "Lễ tân"
       });
       if (res.success) {
         setBookings(prev => prev.map(b => (b.id === bookingId || b.bookingCode === bookingId) ? { ...b, paymentStatus: "Đã thanh toán" } : b));
         if (checkOutModalBooking && (checkOutModalBooking.id === bookingId || checkOutModalBooking.bookingCode === bookingId)) {
           setCheckOutModalBooking(prev => ({ ...prev, paymentStatus: "Đã thanh toán" }));
         }
+        if (checkInModalBooking && (checkInModalBooking.id === bookingId || checkInModalBooking.bookingCode === bookingId)) {
+          setCheckInModalBooking(prev => ({ ...prev, paymentStatus: "Đã thanh toán" }));
+        }
+        if (selectedBooking && (selectedBooking.id === bookingId || selectedBooking.bookingCode === bookingId)) {
+          setSelectedBooking(prev => ({ ...prev, paymentStatus: "Đã thanh toán" }));
+        }
         if (onToast) onToast({ type: "success", message: "Đã thu tiền và cập nhật thanh toán thành công!" });
+        fetchBookings();
+      } else {
+        if (onToast) onToast({ type: "error", message: res.message || "Lỗi cập nhật thanh toán" });
       }
     } catch (err) {
-      if (onToast) onToast({ type: "error", message: "Lỗi cập nhật thanh toán: " + err.message });
+      if (onToast) onToast({ type: "error", message: err.message || "Lỗi cập nhật thanh toán" });
     } finally {
       setIsUpdating(false);
     }
@@ -220,7 +229,8 @@ export default function StaffBookingsTab({ currentUser, initialFilter = "Tất c
   }, [bookings]);
 
   const getStatusBadge = (b) => {
-    const status = typeof b === "string" ? b : (b?.status || "");
+    const rawStatus = typeof b === "string" ? b : (b?.status || "");
+    const status = rawStatus === "Khách yêu cầu nhận phòng" ? "Đã xác nhận" : rawStatus;
     let badgeClass = "badge-pending";
     if (status === "Đã xác nhận" || isBookingInStatus(b, "Đã xác nhận")) badgeClass = "badge-confirmed";
     else if (status === "Đã nhận phòng" || isBookingInStatus(b, "Đã nhận phòng")) badgeClass = "badge-checkin";
@@ -232,6 +242,7 @@ export default function StaffBookingsTab({ currentUser, initialFilter = "Tất c
     if (isBookingInStatus(b, "Đã trả phòng")) displayStatus = "Đã trả phòng";
     else if (isBookingInStatus(b, "Đã nhận phòng")) displayStatus = "Đã nhận phòng";
     else if (isBookingInStatus(b, "Đã xác nhận")) displayStatus = "Đã xác nhận";
+    if (displayStatus === "Khách yêu cầu nhận phòng") displayStatus = "Đã xác nhận";
 
     return (
       <span className={`booking-status-badge ${badgeClass}`}>
@@ -241,13 +252,23 @@ export default function StaffBookingsTab({ currentUser, initialFilter = "Tất c
   };
 
   const getPaymentBadge = (b) => {
-    if (b.paymentStatus === "Đã thanh toán" || b.status === "Đã thanh toán") {
-      return <span className="payment-status-badge payment-paid">✓ Đã thanh toán</span>;
-    }
-    if (b.paymentMethod === "pay_at_hotel") {
-      return <span className="payment-status-badge payment-hotel">Tại khách sạn</span>;
-    }
-    return <span className="payment-status-badge payment-unpaid">Chưa thanh toán</span>;
+    const isPaid = b.paymentStatus === "Đã thanh toán";
+    const isBank = b.paymentMethod === "bank_transfer";
+
+    return (
+      <div style={{ display: "inline-flex", flexDirection: "column", gap: "3px", alignItems: "flex-start" }}>
+        <span style={{ fontSize: "11px", color: "var(--color-navy, #1e293b)", fontWeight: 600 }}>
+          {isBank ? "💳 CK VietQR" : "🏨 Tại quầy"}
+        </span>
+        {isPaid ? (
+          <span className="payment-status-badge payment-paid">✓ Đã thanh toán</span>
+        ) : b.paymentStatus === "Chờ xác nhận chuyển khoản" ? (
+          <span className="payment-status-badge payment-hotel">⏳ Chờ duyệt CK</span>
+        ) : (
+          <span className="payment-status-badge payment-unpaid">Chưa thanh toán</span>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -477,6 +498,20 @@ export default function StaffBookingsTab({ currentUser, initialFilter = "Tất c
                           >
                             <span className="pulse-dot"></span>
                             <span>Khách yêu cầu trả phòng</span>
+                          </button>
+                        )}
+
+                        {/* Nút Thu tiền / Xác nhận thanh toán nếu chưa thanh toán */}
+                        {b.paymentStatus !== "Đã thanh toán" && b.status !== "Đã hủy" && (
+                          <button
+                            type="button"
+                            className="btn-staff-action"
+                            style={{ background: "#fef3c7", color: "#b45309", borderColor: "#fde68a" }}
+                            onClick={() => handleProcessPayment(b.id || b.bookingCode)}
+                            title="Xác nhận đã nhận đủ tiền thanh toán"
+                          >
+                            <DollarSign size={13} />
+                            <span>Thu tiền</span>
                           </button>
                         )}
 

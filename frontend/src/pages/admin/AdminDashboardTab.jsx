@@ -45,6 +45,7 @@ export default function AdminDashboardTab({
       case "Đã xác nhận": return { className: "badge-info" };
       case "Đã nhận phòng": return { className: "badge-success" };
       case "Đã thanh toán": return { className: "badge-success" };
+      case "Khách yêu cầu trả phòng": return { className: "badge-warning" };
       case "Đã trả phòng": return { className: "badge-secondary" };
       case "Đã hủy": return { className: "badge-danger" };
       default: return { className: "badge-warning" };
@@ -254,9 +255,9 @@ export default function AdminDashboardTab({
                     <td>{b.roomName}</td>
                     <td><small>{b.checkIn} → {b.checkOut} ({b.nights} đêm)</small></td>
                     <td><strong className="text-gold">{formatCurrency(b.totalPrice)}</strong></td>
-                    <td><span className={`badge ${getStatusBadge(b.status).className}`}>{b.status}</span></td>
+                    <td><span className={`badge ${getStatusBadge(b.status).className}`}>{b.status === "Khách yêu cầu nhận phòng" ? "Đã xác nhận" : b.status}</span></td>
                     <td className="text-right">
-                      <button className="btn btn-outline-secondary btn-sm" onClick={() => handleGoToBookings(b.status || "Tất cả")}>
+                      <button className="btn btn-outline-secondary btn-sm" onClick={() => handleGoToBookings(b.status === "Khách yêu cầu nhận phòng" ? "Đã xác nhận" : (b.status || "Tất cả"))}>
                         <Eye size={14} /> Xem
                       </button>
                     </td>

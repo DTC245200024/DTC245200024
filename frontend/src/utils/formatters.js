@@ -63,6 +63,7 @@ export function getStatusBadge(status) {
       return { label: "Đang sử dụng", className: "badge-danger" };
     case "Chờ xác nhận":
       return { label: "Chờ xác nhận", className: "badge-warning" };
+    case "Khách yêu cầu nhận phòng":
     case "Đã xác nhận":
       return { label: "Đã xác nhận", className: "badge-info" };
     case "Đã nhận phòng":

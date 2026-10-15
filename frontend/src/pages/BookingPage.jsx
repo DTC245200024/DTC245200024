@@ -94,14 +94,16 @@ export default function BookingPage({
         nights,
         guests: Number(guests),
         totalPrice,
-        specialRequests: specialRequests.trim(),
-        status: "Chờ thanh toán"
+        paymentMethod: paymentMethod, // Requirement 2: Lưu phương thức thanh toán vào database cùng đơn
+        status: "Chờ xác nhận", // Requirement 3: Bắt buộc ở trạng thái Chờ xác nhận (Pending)
+        paymentStatus: paymentMethod === "bank_transfer" ? "Chờ xác nhận chuyển khoản" : "Chưa thanh toán",
+        specialRequests: specialRequests.trim()
       };
 
       const res = await bookingApi.create(bookingData);
       if (res.success) {
         setConfirmedBooking(res.data);
-        // SAU KHI ĐẶT PHÒNG THÀNH CÔNG -> Chuyển sang Bước 5: Thanh toán
+        // Chuyển sang Bước 2: Hướng dẫn thanh toán / xác nhận phương thức
         setBookingStep("payment");
         if (onBookingSuccess) {
           onBookingSuccess(res.data);
@@ -116,17 +118,19 @@ export default function BookingPage({
     }
   };
 
-  // BƯỚC 5: Sau khi chọn phương thức -> Nhấn "Xác nhận thanh toán"
+  // BƯỚC 2: Xác nhận phương thức thanh toán & Hoàn tất bước đặt phòng
   const handleConfirmPayment = async () => {
     if (!confirmedBooking) return;
 
     try {
       setIsProcessingPayment(true);
-      const newStatus = paymentMethod === "bank_transfer" ? "Đã thanh toán" : "Thanh toán tại khách sạn";
+      // Requirement 3 & 6: Không tự ý chuyển thành đã thanh toán hoặc đã xác nhận
+      const currentPaymentStatus = paymentMethod === "bank_transfer" ? "Chờ xác nhận chuyển khoản" : "Chưa thanh toán";
       
       const res = await bookingApi.update(confirmedBooking.id, {
         paymentMethod: paymentMethod,
-        status: newStatus
+        paymentStatus: currentPaymentStatus,
+        status: "Chờ xác nhận" // Giữ nguyên trạng thái Chờ xác nhận (Pending)
       });
 
       if (res.success) {
@@ -136,7 +140,7 @@ export default function BookingPage({
       }
     } catch (err) {
       console.error("Payment confirmation failed:", err);
-      alert("Lỗi khi xác nhận thanh toán: " + err.message);
+      alert("Lỗi khi xác nhận thông tin thanh toán: " + err.message);
     } finally {
       setIsProcessingPayment(false);
     }
@@ -396,7 +400,7 @@ export default function BookingPage({
                 </div>
               )}
 
-              {/* Nút Xác nhận thanh toán */}
+              {/* Nút Xác nhận phương thức thanh toán */}
               <div className="payment-action-footer mt-4">
                 <button
                   className="btn btn-gold btn-block btn-lg btn-glow"
@@ -404,11 +408,11 @@ export default function BookingPage({
                   disabled={isProcessingPayment}
                 >
                   {isProcessingPayment ? (
-                    <span>Đang cập nhật trạng thái thanh toán...</span>
+                    <span>Đang cập nhật...</span>
                   ) : (
                     <>
                       <Check size={18} />
-                      <span>Xác Nhận Thanh Toán</span>
+                      <span>{paymentMethod === "bank_transfer" ? "Tôi Đã Chuyển Khoản - Hoàn Tất Đặt Phòng" : "Xác Nhận Đặt Phòng (Thanh Toán Tại Quầy)"}</span>
                       <ArrowRight size={18} />
                     </>
                   )}
@@ -419,17 +423,17 @@ export default function BookingPage({
         )}
 
         {/* ========================================================================= */}
-        {/* BƯỚC 5B: MÀN HÌNH HOÀN TẤT THANH TOÁN (COMPLETED) */}
+        {/* BƯỚC 3: MÀN HÌNH HOÀN TẤT ĐẶT PHÒNG (COMPLETED) */}
         {/* ========================================================================= */}
         {bookingStep === "completed" && confirmedBooking && (
           <div className="booking-voucher-card card-glass max-w-700 mx-auto">
             <div className="voucher-header text-center">
               <div className="success-icon-wrap">
-                <CheckCircle2 size={48} className="text-success mx-auto" />
+                <CheckCircle2 size={48} className="text-warning mx-auto" />
               </div>
-              <h2 className="voucher-title">Thanh Toán & Giữ Phòng Hoàn Tất!</h2>
+              <h2 className="voucher-title">Đặt Phòng Thành Công - Chờ Xác Nhận!</h2>
               <p className="voucher-subtitle">
-                Cảm ơn quý khách <strong>{confirmedBooking.customerName}</strong>. Đơn đặt phòng đã được ghi nhận trên hệ thống và cập nhật vào mục <strong>Đơn đặt phòng của tôi</strong>.
+                Cảm ơn quý khách <strong>{confirmedBooking.customerName}</strong>. Đơn đặt phòng của quý khách đã được ghi nhận trên hệ thống ở trạng thái <strong className="text-warning">Chờ xác nhận (Pending)</strong>. Lễ tân khách sạn sẽ kiểm tra và xác nhận đơn của quý khách.
               </p>
             </div>
 
@@ -647,6 +651,59 @@ export default function BookingPage({
                       onChange={(e) => setSpecialRequests(e.target.value)}
                       className="input-control"
                     />
+                  </div>
+                </div>
+
+                <div className="form-group mb-4">
+                  <label className="font-weight-600 mb-2 d-block">
+                    <CreditCard size={15} /> Phương thức thanh toán <span className="text-danger">*</span>
+                  </label>
+                  <div className="methods-options-grid">
+                    <div 
+                      className={`payment-method-option ${paymentMethod === "cash" ? "selected" : ""}`}
+                      onClick={() => setPaymentMethod("cash")}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <div className="method-radio">
+                        <input 
+                          type="radio" 
+                          name="form_payment_method" 
+                          value="cash" 
+                          checked={paymentMethod === "cash"} 
+                          onChange={() => setPaymentMethod("cash")}
+                        />
+                      </div>
+                      <div className="method-icon-box">
+                        <Building size={22} />
+                      </div>
+                      <div className="method-info">
+                        <strong>Thanh toán tại quầy</strong>
+                        <p>Thanh toán bằng tiền mặt hoặc thẻ tại quầy Lễ tân khi làm thủ tục nhận phòng.</p>
+                      </div>
+                    </div>
+
+                    <div 
+                      className={`payment-method-option ${paymentMethod === "bank_transfer" ? "selected" : ""}`}
+                      onClick={() => setPaymentMethod("bank_transfer")}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <div className="method-radio">
+                        <input 
+                          type="radio" 
+                          name="form_payment_method" 
+                          value="bank_transfer" 
+                          checked={paymentMethod === "bank_transfer"} 
+                          onChange={() => setPaymentMethod("bank_transfer")}
+                        />
+                      </div>
+                      <div className="method-icon-box">
+                        <QrCode size={22} />
+                      </div>
+                      <div className="method-info">
+                        <strong>Chuyển khoản ngân hàng (VietQR)</strong>
+                        <p>Quét mã QR hoặc chuyển khoản Internet Banking 24/7 theo thông tin ngân hàng.</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
