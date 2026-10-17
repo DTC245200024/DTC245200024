@@ -92,18 +92,23 @@ npm run dev
 
 ---
 
-## 🐳 HƯỚNG DẪN TRIỂN KHAI BẰNG DOCKER DESKTOP TRÊN MACBOOK (MỤC 1, 2 & 3)
+## 🐳 HƯỚNG DẪN TRIỂN KHAI BẰNG DOCKER DESKTOP TRÊN MACBOOK (MỤC 1, 2, 3 & 4)
 
-Hệ thống được đóng gói hoàn chỉnh bằng **Docker Compose** gồm 5 dịch vụ độc lập kết nối qua mạng nội bộ `hotel-network`:
-- **`hotel_nginx`**: Nginx Reverse Proxy đóng vai trò cổng vào duy nhất (Port `80` HTTP & Port `443` HTTPS SSL tự ký), trang bị Security Headers.
+Hệ thống được đóng gói hoàn chỉnh bằng **Docker Compose** gồm 10 dịch vụ độc lập kết nối qua mạng nội bộ `hotel-network`:
+- **`hotel_nginx`**: Nginx Reverse Proxy đóng vai trò cổng vào duy nhất (Port `80` HTTP & Port `443` HTTPS SSL tự ký), trang bị Security Headers và endpoint `/stub_status`.
 - **`hotel_frontend`**: Giao diện người dùng React 19 + Vite SPA (Port nội bộ `5173`).
 - **`hotel_backend`**: Máy chủ REST API Node.js Express (Port nội bộ `5001`).
-- **`hotel_database`**: Cơ sở dữ liệu NoSQL MongoDB 6.0 (Port `27017`), tự động nạp dữ liệu ban đầu từ thư mục `mongo-init/`.
+- **`hotel_database`**: Cơ sở dữ liệu NoSQL MongoDB 6.0 (Port `27017`), dữ liệu lưu trong volume `mongo_data`.
 - **`hotel_db_admin`**: Giao diện Web trực quan quản lý Database Mongo-Express (Port `8081`).
+- **`hotel_cadvisor`**: Thu thập metrics phần cứng Docker Containers (CPU, RAM, Network, trạng thái) (Port nội bộ `8080`).
+- **`hotel_nginx_exporter`**: Thu thập metrics Nginx Web Server từ `/stub_status` (Port nội bộ `9113`).
+- **`hotel_mongodb_exporter`**: Thu thập metrics MongoDB Database (Operations, Connections, Memory) (Port nội bộ `9216`).
+- **`hotel_prometheus`**: Máy chủ giám sát & lưu trữ Time-Series Database (Port `9090`), scrape tự động 4 targets qua `hotel-network`.
+- **`hotel_grafana`**: Hệ thống trực quan hóa Dashboard (Port `3000`), tự động kết nối Prometheus và nạp Dashboard giám sát 3 phạm vi.
 
 ### 1. Yêu cầu cài đặt
 - Đã cài đặt và mở **Docker Desktop** trên MacBook.
-- Đảm bảo các cổng `80`, `443`, `8081`, `27017` không bị chiếm dụng.
+- Đảm bảo các cổng `80`, `443`, `3000`, `8081`, `9090`, `27017` không bị chiếm dụng.
 
 ### 2. Cấu hình biến môi trường & Bảo mật
 Sao chép file cấu hình mẫu `.env.example` thành `.env` và tự thiết lập các mật khẩu an toàn theo ý muốn:
@@ -112,43 +117,61 @@ cp .env.example .env
 ```
 
 > ⚠️ **LƯU Ý BẢO MẬT:**
-> - File `.env` chứa thông tin nhạy cảm (mật khẩu cơ sở dữ liệu, tài khoản quản trị) và đã được cấu hình trong `.gitignore` để **không bao giờ commit lên GitHub**.
+> - File `.env` chứa thông tin nhạy cảm (mật khẩu cơ sở dữ liệu, tài khoản quản trị, mật khẩu Grafana) và đã được cấu hình trong `.gitignore` để **không bao giờ commit lên GitHub**.
 > - Tuyệt đối không ghi mật khẩu thật vào `.env.example` hoặc các tài liệu chia sẻ công khai.
 
 ### 3. Lệnh khởi chạy toàn bộ hệ thống bằng Docker Compose
 Mở Terminal tại thư mục gốc của dự án:
 ```bash
-# Build các image và chạy ngầm tất cả container (kèm Nginx reverse proxy)
+# Khởi chạy toàn bộ hệ thống gồm Website, Reverse Proxy và Monitoring Stack
 docker compose up -d --build
 ```
 
 ### 4. Kiểm tra trạng thái và log các container
 ```bash
-# Xem danh sách các container đang chạy
+# Xem danh sách tất cả container đang chạy
 docker compose ps
 
 # Kiểm tra cú pháp cấu hình Nginx
 docker exec hotel_nginx nginx -t
 
-# Xem log thời gian thực của Nginx
-docker logs -f hotel_nginx
+# Xem log thời gian thực của Prometheus
+docker logs -f hotel_prometheus
 
-# Xem log thời gian thực của backend
-docker logs -f hotel_backend
+# Xem log thời gian thực của Grafana
+docker logs -f hotel_grafana
 ```
 
-### 5. Địa chỉ truy cập các dịch vụ trên trình duyệt (Qua Nginx Reverse Proxy)
+### 5. Địa chỉ truy cập các dịch vụ trên trình duyệt
 | Dịch Vụ | Địa Chỉ Truy Cập | Cổng (Port) | Ghi Chú & Hướng Dẫn Đăng Nhập |
 |---|---|---|---|
-| **Cổng vào Website (Nginx HTTP)** | [http://localhost](http://localhost) | `80` | Giao diện Web chính thức qua Nginx Reverse Proxy, chuyển hướng `/` về Frontend, `/api` về Backend. |
+| **Cổng vào Website (Nginx HTTP)** | [http://localhost](http://localhost) | `80` | Giao diện Web chính thức qua Nginx Reverse Proxy (`/` -> Frontend, `/api` -> Backend). |
 | **Cổng vào Website (Nginx HTTPS)** | [https://localhost](https://localhost) | `443` | HTTPS bảo mật chứng chỉ SSL tự ký (Self-signed Certificate). |
-| **Backend API Health Check** | [http://localhost/api/health](http://localhost/api/health) | `80 / 443` | REST API qua Nginx (có Security Headers: nosniff, SAMEORIGIN, strict-origin). |
-| **Quản lý DB (Mongo-Express)** | [http://localhost:8081](http://localhost:8081) | `8081` | Quản lý MongoDB Web GUI (`admin` / `AdminPass@123`). Cổng cấu hình qua `DB_ADMIN_PORT`. |
+| **Backend API Health Check** | [http://localhost/api/health](http://localhost/api/health) | `80 / 443` | REST API qua Nginx (Security Headers: nosniff, SAMEORIGIN, strict-origin). |
+| **Bảng Điều Khiển Grafana (Mục 4)** | [http://localhost:3000](http://localhost:3000) | `3000` | Dashboard giám sát Container, Nginx và MongoDB (Tài khoản: `admin` / `admin`). |
+| **Máy Chủ Prometheus (Mục 4)** | [http://localhost:9090](http://localhost:9090) | `9090` | Xem trạng thái scrape targets tại [http://localhost:9090/targets](http://localhost:9090/targets). |
+| **Quản lý DB (Mongo-Express)** | [http://localhost:8081](http://localhost:8081) | `8081` | Quản lý MongoDB Web GUI (`admin` / cấu hình qua `DB_ADMIN_PASSWORD`). |
 | **Cơ sở dữ liệu MongoDB** | `localhost:27017` | `27017` | Kết nối trực tiếp qua `DB_USER` và `DB_PASSWORD` (Database: `hotel_booking_db`). |
 
-### 6. Lệnh dừng hệ thống khi không sử dụng
+### 6. Giám Sát Toàn Diện Với Prometheus & Grafana (Mục 4)
+Hệ thống giám sát được tự động hóa hoàn toàn thông qua Docker Compose và cơ chế Provisioning:
+1. **Phạm vi giám sát:**
+   - **Docker Containers**: Trạng thái container hoạt động, tỷ lệ % CPU sử dụng, RAM tiêu thụ theo từng container (qua **cAdvisor**).
+   - **Web Server Nginx**: Trạng thái uptime (`nginx_up`), số lượng kết nối đang hoạt động (`active connections`), tốc độ xử lý request (`requests/sec`) (qua **Nginx Prometheus Exporter**).
+   - **Database MongoDB**: Trạng thái uptime (`mongodb_up`), số lượng kết nối hiện tại (`connections`), tần suất thao tác CRUD (`CRUD ops/sec`), dung lượng RAM Resident & Virtual (qua **Percona MongoDB Exporter**).
+2. **Cơ chế Scraping & Mạng nội bộ:**
+   - Prometheus scrape định kỳ 5 giây/lần tới các endpoint nội bộ trong mạng `hotel-network`: `cadvisor:8080`, `nginx-exporter:9113`, `mongodb-exporter:9216`, và chính `localhost:9090`.
+   - Tất cả 4 targets đều ở trạng thái `UP`.
+3. **Grafana Provisioning & Dashboard:**
+   - Data Source `Prometheus` được cấu hình tự động trỏ đến `http://prometheus:9090`.
+   - Dashboard **"Hệ Thống Giám Sát Khách Sạn (Docker - Nginx - MongoDB)"** được tự động import từ thư mục provisioning, hiển thị biểu đồ và đồng hồ đo thời gian thực cho cả 3 phạm vi.
+4. **Bảo toàn dữ liệu:**
+   - Dữ liệu Prometheus và Grafana được lưu trữ độc lập qua 2 named volume `prometheus_data` và `grafana_data`.
+   - Volume `mongo_data` được giữ nguyên vẹn 100%, bảo đảm toàn bộ dữ liệu phòng và đơn đặt phòng không bị ảnh hưởng.
+
+### 7. Lệnh dừng hệ thống khi không sử dụng
 ```bash
-# Dừng các container (giữ nguyên dữ liệu trong volume)
+# Dừng các container (giữ nguyên toàn bộ dữ liệu trong volume)
 docker compose down
 ```
 

@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: 'Hotel System Monitoring'
+    orgId: 1
+    folder: 'Hotel Services'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

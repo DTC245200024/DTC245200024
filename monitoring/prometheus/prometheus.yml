@@ -1,0 +1,32 @@
+# =========================================================================
+# PROMETHEUS CONFIGURATION
+# Hệ thống Giám sát Hotel Booking System (Mục 4)
+# =========================================================================
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Giám sát chính máy chủ Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 1. Giám sát Docker Containers (Trạng thái, CPU, RAM qua cAdvisor)
+  - job_name: 'cadvisor'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # 2. Giám sát Web Server Nginx (Trạng thái, Kết nối, Request rate)
+  - job_name: 'nginx'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  # 3. Giám sát Database MongoDB (Trạng thái, Kết nối, Operations rate, Memory)
+  - job_name: 'mongodb'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['mongodb-exporter:9216']
