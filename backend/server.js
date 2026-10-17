@@ -8,6 +8,7 @@ const bookingRoutes = require("./routes/bookings");
 const authRoutes = require("./routes/auth");
 const staffRoutes = require("./routes/staff");
 const bookingController = require("./controllers/bookingController");
+const { connectDB, mongoose } = require("./config/db");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -56,8 +57,11 @@ app.use((req, res, next) => {
 
 // Health check
 app.get("/api/health", (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
   res.json({
     status: "online",
+    database: dbStatus,
+    databaseName: mongoose.connection.name || "hotel_booking_db",
     message: "Hệ thống Đặt phòng Khách sạn API đang hoạt động bình thường",
     timestamp: new Date().toISOString()
   });
@@ -109,7 +113,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`======================================================`);
   console.log(`🏨 HOTEL BOOKING BACKEND SERVER ĐANG CHẠY TẠI:`);
   console.log(`👉 http://localhost:${PORT}`);
@@ -118,4 +122,10 @@ app.listen(PORT, () => {
   console.log(`👉 Danh sách phòng: http://localhost:${PORT}/api/rooms`);
   console.log(`👉 Danh sách đặt phòng: http://localhost:${PORT}/api/bookings`);
   console.log(`======================================================`);
+
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error("⚠️ Không thể kết nối MongoDB ngay khi khởi động:", err.message);
+  }
 });

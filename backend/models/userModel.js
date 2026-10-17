@@ -1,9 +1,32 @@
+const mongoose = require("mongoose");
 const fs = require("fs").promises;
 const fsSync = require("fs");
 const path = require("path");
+const { connectDB } = require("../config/db");
 
 const DATA_DIR = path.join(__dirname, "../data");
 const DATA_FILE = path.join(DATA_DIR, "users.json");
+
+const userSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true, index: true },
+    phone: { type: String, required: true, index: true },
+    password: { type: String, required: true },
+    role: { type: String, enum: ["ADMIN", "STAFF", "CUSTOMER"], default: "CUSTOMER" },
+    status: { type: String, default: "active" },
+    department: { type: String, default: "" },
+    createdAt: { type: String, default: () => new Date().toISOString() }
+  },
+  {
+    collection: "users",
+    timestamps: false,
+    versionKey: false
+  }
+);
+
+const UserDoc = mongoose.models.User || mongoose.model("User", userSchema);
 
 function getDefaultUsers() {
   const adminEmail = process.env.ADMIN_EMAIL || "admin@grandpalace.vn";
@@ -54,62 +77,114 @@ function getDefaultUsers() {
   ];
 }
 
-async function readUsers() {
+async function readUsersFromFile() {
+  try {
+    if (fsSync.existsSync(DATA_FILE)) {
+      const data = await fs.readFile(DATA_FILE, "utf-8");
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (error) {
+    console.error("Lỗi đọc backup users.json:", error.message);
+  }
+  return getDefaultUsers();
+}
+
+async function writeUsersToFile(users) {
   try {
     if (!fsSync.existsSync(DATA_DIR)) {
       fsSync.mkdirSync(DATA_DIR, { recursive: true });
     }
-    if (!fsSync.existsSync(DATA_FILE)) {
-      const defaults = getDefaultUsers();
-      await fs.writeFile(DATA_FILE, JSON.stringify(defaults, null, 2), "utf-8");
-      return defaults;
-    }
-    const data = await fs.readFile(DATA_FILE, "utf-8");
-    const parsed = JSON.parse(data);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      const defaults = getDefaultUsers();
-      await fs.writeFile(DATA_FILE, JSON.stringify(defaults, null, 2), "utf-8");
-      return defaults;
-    }
-    return parsed;
+    await fs.writeFile(DATA_FILE, JSON.stringify(users, null, 2), "utf-8");
   } catch (error) {
-    console.error("Error reading users data, using default accounts:", error);
-    return getDefaultUsers();
+    console.error("Lỗi ghi backup users.json:", error.message);
   }
 }
 
-async function writeUsers(users) {
-  if (!fsSync.existsSync(DATA_DIR)) {
-    fsSync.mkdirSync(DATA_DIR, { recursive: true });
+// Đồng bộ ban đầu nếu MongoDB chưa có users
+async function syncInitialUsers() {
+  try {
+    await connectDB();
+    const count = await UserDoc.countDocuments();
+    if (count === 0) {
+      const fileUsers = await readUsersFromFile();
+      if (fileUsers.length > 0) {
+        await UserDoc.insertMany(fileUsers);
+        console.log(`🍃 [MongoDB] Đã nạp ${fileUsers.length} tài khoản người dùng ban đầu vào MongoDB.`);
+      }
+    }
+  } catch (e) {
+    console.error("Lỗi đồng bộ users vào MongoDB:", e.message);
   }
-  await fs.writeFile(DATA_FILE, JSON.stringify(users, null, 2), "utf-8");
 }
+syncInitialUsers().catch(e => console.error(e));
 
 module.exports = {
+  UserDoc,
+
   async getAll() {
-    return await readUsers();
+    try {
+      await connectDB();
+      const users = await UserDoc.find().lean();
+      if (users && users.length > 0) return users.map(u => ({ ...u, id: u.id || String(u._id) }));
+    } catch (e) {
+      console.warn("MongoDB không khả dụng khi getAll users, dùng file:", e.message);
+    }
+    return await readUsersFromFile();
   },
 
   async findByEmail(email) {
-    const users = await readUsers();
-    return users.find(u => u.email.toLowerCase() === email.toLowerCase().trim()) || null;
+    if (!email) return null;
+    const cleanEmail = email.toLowerCase().trim();
+    try {
+      await connectDB();
+      const doc = await UserDoc.findOne({ email: new RegExp(`^${cleanEmail}$`, "i") }).lean();
+      if (doc) return { ...doc, id: doc.id || String(doc._id) };
+    } catch (e) {
+      console.warn("MongoDB không khả dụng khi findByEmail, dùng file:", e.message);
+    }
+    const users = await readUsersFromFile();
+    return users.find(u => u.email && u.email.toLowerCase() === cleanEmail) || null;
   },
 
   async findByPhone(phone) {
-    const users = await readUsers();
-    return users.find(u => u.phone === phone.trim()) || null;
+    if (!phone) return null;
+    const cleanPhone = phone.trim();
+    try {
+      await connectDB();
+      const doc = await UserDoc.findOne({ phone: cleanPhone }).lean();
+      if (doc) return { ...doc, id: doc.id || String(doc._id) };
+    } catch (e) {
+      console.warn("MongoDB không khả dụng khi findByPhone, dùng file:", e.message);
+    }
+    const users = await readUsersFromFile();
+    return users.find(u => u.phone === cleanPhone) || null;
   },
 
   async findById(id) {
-    const users = await readUsers();
-    return users.find(u => u.id === id) || null;
+    if (!id) return null;
+    const cleanId = String(id).trim();
+    try {
+      await connectDB();
+      const doc = await UserDoc.findOne({ id: cleanId }).lean();
+      if (doc) return { ...doc, id: doc.id || String(doc._id) };
+    } catch (e) {
+      console.warn("MongoDB không khả dụng khi findById, dùng file:", e.message);
+    }
+    const users = await readUsersFromFile();
+    return users.find(u => u.id === cleanId) || null;
   },
 
-  // Customer registration strictly creates CUSTOMER role
   async create(userData) {
-    const users = await readUsers();
-    const newId = "USR-" + (1000 + users.length + 1);
-    
+    await connectDB();
+    let existingUsers = [];
+    try {
+      existingUsers = await UserDoc.find().lean();
+    } catch (e) {
+      existingUsers = await readUsersFromFile();
+    }
+
+    const newId = "USR-" + (1000 + existingUsers.length + 1);
     const newUser = {
       id: newId,
       name: userData.name.trim(),
@@ -121,16 +196,31 @@ module.exports = {
       createdAt: new Date().toISOString()
     };
 
-    users.push(newUser);
-    await writeUsers(users);
-    return newUser;
+    try {
+      const created = await UserDoc.create(newUser);
+      const resObj = created.toObject ? created.toObject() : created;
+      readUsersFromFile().then(async list => {
+        list.push(resObj);
+        await writeUsersToFile(list);
+      });
+      return resObj;
+    } catch (e) {
+      console.error("Lỗi MongoDB khi tạo user:", e.message);
+      throw e;
+    }
   },
 
-  // Admin-only: Create new Staff account
   async createStaff(staffData) {
-    const users = await readUsers();
-    const newId = "STAFF-" + (100 + users.filter(u => u.role === "STAFF").length + 1);
+    await connectDB();
+    let staffCount = 0;
+    try {
+      staffCount = await UserDoc.countDocuments({ role: "STAFF" });
+    } catch (e) {
+      const users = await readUsersFromFile();
+      staffCount = users.filter(u => u.role === "STAFF").length;
+    }
 
+    const newId = "STAFF-" + (100 + staffCount + 1);
     const newStaff = {
       id: newId,
       name: staffData.name.trim(),
@@ -143,51 +233,93 @@ module.exports = {
       createdAt: new Date().toISOString()
     };
 
-    users.push(newStaff);
-    await writeUsers(users);
-    return newStaff;
+    try {
+      const created = await UserDoc.create(newStaff);
+      const resObj = created.toObject ? created.toObject() : created;
+      readUsersFromFile().then(async list => {
+        list.push(resObj);
+        await writeUsersToFile(list);
+      });
+      return resObj;
+    } catch (e) {
+      console.error("Lỗi MongoDB khi tạo staff:", e.message);
+      throw e;
+    }
   },
 
-  // Admin-only: Toggle Staff active/locked
   async toggleStaffStatus(id) {
-    const users = await readUsers();
-    const index = users.findIndex(u => u.id === id);
-    if (index === -1) return null;
-    if (users[index].role !== "STAFF") return null; // Cannot lock admin
+    const cleanId = String(id).trim();
+    await connectDB();
+    try {
+      const user = await UserDoc.findOne({ id: cleanId });
+      if (!user || user.role !== "STAFF") return null;
 
-    const currentStatus = users[index].status || "active";
-    users[index].status = currentStatus === "active" ? "locked" : "active";
+      user.status = user.status === "active" ? "locked" : "active";
+      await user.save();
+      const resObj = user.toObject();
 
-    await writeUsers(users);
-    return users[index];
+      readUsersFromFile().then(async list => {
+        const idx = list.findIndex(u => u.id === cleanId);
+        if (idx !== -1) {
+          list[idx].status = user.status;
+          await writeUsersToFile(list);
+        }
+      });
+      return resObj;
+    } catch (e) {
+      console.error("Lỗi MongoDB khi toggleStaffStatus:", e.message);
+      return null;
+    }
   },
 
-  // Admin-only: Delete staff account
   async deleteStaff(id) {
-    const users = await readUsers();
-    const userToDelete = users.find(u => u.id === id);
-    if (!userToDelete || userToDelete.role !== "STAFF") return false; // Strictly protect admin
+    const cleanId = String(id).trim();
+    await connectDB();
+    try {
+      const user = await UserDoc.findOne({ id: cleanId });
+      if (!user || user.role !== "STAFF") return false;
 
-    const filtered = users.filter(u => u.id !== id);
-    await writeUsers(filtered);
-    return true;
+      await UserDoc.deleteOne({ id: cleanId });
+      readUsersFromFile().then(async list => {
+        const filtered = list.filter(u => u.id !== cleanId);
+        await writeUsersToFile(filtered);
+      });
+      return true;
+    } catch (e) {
+      console.error("Lỗi MongoDB khi deleteStaff:", e.message);
+      return false;
+    }
   },
 
   async update(id, updateData) {
-    const users = await readUsers();
-    const index = users.findIndex(u => u.id === id);
-    if (index === -1) return null;
+    const cleanId = String(id).trim();
+    await connectDB();
 
-    const updated = {
-      ...users[index],
-      ...updateData,
-      id: users[index].id,
-      // Protect role integrity
-      role: users[index].role
-    };
+    const safeUpdate = { ...updateData };
+    delete safeUpdate._id;
+    delete safeUpdate.id;
+    delete safeUpdate.role; // Protect role integrity
 
-    users[index] = updated;
-    await writeUsers(users);
-    return updated;
+    try {
+      const updated = await UserDoc.findOneAndUpdate(
+        { id: cleanId },
+        { $set: safeUpdate },
+        { new: true }
+      ).lean();
+
+      if (updated) {
+        readUsersFromFile().then(async list => {
+          const idx = list.findIndex(u => u.id === cleanId);
+          if (idx !== -1) {
+            list[idx] = { ...list[idx], ...updated };
+            await writeUsersToFile(list);
+          }
+        });
+        return updated;
+      }
+    } catch (e) {
+      console.error("Lỗi MongoDB khi update user:", e.message);
+    }
+    return null;
   }
 };
