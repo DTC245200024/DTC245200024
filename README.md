@@ -92,9 +92,9 @@ npm run dev
 
 ---
 
-## 🐳 HƯỚNG DẪN TRIỂN KHAI BẰNG DOCKER DESKTOP TRÊN MACBOOK (MỤC 1, 2, 3 & 4)
+## 🐳 HƯỚNG DẪN TRIỂN KHAI BẰNG DOCKER DESKTOP TRÊN MACBOOK (MỤC 1, 2, 3, 4 & 5)
 
-Hệ thống được đóng gói hoàn chỉnh bằng **Docker Compose** gồm 10 dịch vụ độc lập kết nối qua mạng nội bộ `hotel-network`:
+Hệ thống được đóng gói hoàn chỉnh bằng **Docker Compose** gồm 12 dịch vụ độc lập kết nối qua mạng nội bộ `hotel-network`:
 - **`hotel_nginx`**: Nginx Reverse Proxy đóng vai trò cổng vào duy nhất (Port `80` HTTP & Port `443` HTTPS SSL tự ký), trang bị Security Headers và endpoint `/stub_status`.
 - **`hotel_frontend`**: Giao diện người dùng React 19 + Vite SPA (Port nội bộ `5173`).
 - **`hotel_backend`**: Máy chủ REST API Node.js Express (Port nội bộ `5001`).
@@ -104,11 +104,13 @@ Hệ thống được đóng gói hoàn chỉnh bằng **Docker Compose** gồm 
 - **`hotel_nginx_exporter`**: Thu thập metrics Nginx Web Server từ `/stub_status` (Port nội bộ `9113`).
 - **`hotel_mongodb_exporter`**: Thu thập metrics MongoDB Database (Operations, Connections, Memory) (Port nội bộ `9216`).
 - **`hotel_prometheus`**: Máy chủ giám sát & lưu trữ Time-Series Database (Port `9090`), scrape tự động 4 targets qua `hotel-network`.
-- **`hotel_grafana`**: Hệ thống trực quan hóa Dashboard (Port `3000`), tự động kết nối Prometheus và nạp Dashboard giám sát 3 phạm vi.
+- **`hotel_grafana`**: Hệ thống trực quan hóa Dashboard & Explore Log (Port `3000`), tự động kết nối Prometheus và Loki.
+- **`hotel_loki`**: Máy chủ tập trung lưu trữ và truy vấn log (Port `3100`), lưu trữ phân đoạn log qua volume `loki_data`.
+- **`hotel_promtail`**: Trình thu thập log thời gian thực từ Docker socket và đẩy về Loki kèm các nhãn metadata chuẩn.
 
 ### 1. Yêu cầu cài đặt
 - Đã cài đặt và mở **Docker Desktop** trên MacBook.
-- Đảm bảo các cổng `80`, `443`, `3000`, `8081`, `9090`, `27017` không bị chiếm dụng.
+- Đảm bảo các cổng `80`, `443`, `3000`, `3100`, `8081`, `9090`, `27017` không bị chiếm dụng.
 
 ### 2. Cấu hình biến môi trường & Bảo mật
 Sao chép file cấu hình mẫu `.env.example` thành `.env` và tự thiết lập các mật khẩu an toàn theo ý muốn:
@@ -123,7 +125,7 @@ cp .env.example .env
 ### 3. Lệnh khởi chạy toàn bộ hệ thống bằng Docker Compose
 Mở Terminal tại thư mục gốc của dự án:
 ```bash
-# Khởi chạy toàn bộ hệ thống gồm Website, Reverse Proxy và Monitoring Stack
+# Khởi chạy toàn bộ hệ thống gồm Website, Reverse Proxy, Monitoring và Logging Stack
 docker compose up -d --build
 ```
 
@@ -135,11 +137,11 @@ docker compose ps
 # Kiểm tra cú pháp cấu hình Nginx
 docker exec hotel_nginx nginx -t
 
-# Xem log thời gian thực của Prometheus
-docker logs -f hotel_prometheus
+# Xem log thời gian thực của Loki
+docker logs -f hotel_loki
 
-# Xem log thời gian thực của Grafana
-docker logs -f hotel_grafana
+# Xem log thời gian thực của Promtail
+docker logs -f hotel_promtail
 ```
 
 ### 5. Địa chỉ truy cập các dịch vụ trên trình duyệt
@@ -148,7 +150,8 @@ docker logs -f hotel_grafana
 | **Cổng vào Website (Nginx HTTP)** | [http://localhost](http://localhost) | `80` | Giao diện Web chính thức qua Nginx Reverse Proxy (`/` -> Frontend, `/api` -> Backend). |
 | **Cổng vào Website (Nginx HTTPS)** | [https://localhost](https://localhost) | `443` | HTTPS bảo mật chứng chỉ SSL tự ký (Self-signed Certificate). |
 | **Backend API Health Check** | [http://localhost/api/health](http://localhost/api/health) | `80 / 443` | REST API qua Nginx (Security Headers: nosniff, SAMEORIGIN, strict-origin). |
-| **Bảng Điều Khiển Grafana (Mục 4)** | [http://localhost:3000](http://localhost:3000) | `3000` | Dashboard giám sát Container, Nginx và MongoDB (Tài khoản: `admin` / `admin`). |
+| **Bảng Điều Khiển Grafana (Mục 4 & 5)** | [http://localhost:3000](http://localhost:3000) | `3000` | Dashboard giám sát Metrics & Explore LogQL (Tài khoản: `admin` / `admin`). |
+| **Máy Chủ Thu Thập Log Loki (Mục 5)** | [http://localhost:3100](http://localhost:3100) | `3100` | Kiểm tra trạng thái sẵn sàng tại [http://localhost:3100/ready](http://localhost:3100/ready). |
 | **Máy Chủ Prometheus (Mục 4)** | [http://localhost:9090](http://localhost:9090) | `9090` | Xem trạng thái scrape targets tại [http://localhost:9090/targets](http://localhost:9090/targets). |
 | **Quản lý DB (Mongo-Express)** | [http://localhost:8081](http://localhost:8081) | `8081` | Quản lý MongoDB Web GUI (`admin` / cấu hình qua `DB_ADMIN_PASSWORD`). |
 | **Cơ sở dữ liệu MongoDB** | `localhost:27017` | `27017` | Kết nối trực tiếp qua `DB_USER` và `DB_PASSWORD` (Database: `hotel_booking_db`). |
@@ -169,7 +172,19 @@ Hệ thống giám sát được tự động hóa hoàn toàn thông qua Docker
    - Dữ liệu Prometheus và Grafana được lưu trữ độc lập qua 2 named volume `prometheus_data` và `grafana_data`.
    - Volume `mongo_data` được giữ nguyên vẹn 100%, bảo đảm toàn bộ dữ liệu phòng và đơn đặt phòng không bị ảnh hưởng.
 
-### 7. Lệnh dừng hệ thống khi không sử dụng
+### 7. Hệ Thống Log Tập Trung Với Loki + Promtail & LogQL (Mục 5)
+Hệ thống quản lý log tập trung được triển khai hoàn chỉnh để thu thập, phân tích và truy vấn log của toàn bộ hệ thống:
+1. **Kiến trúc Logging Stack:**
+   - **Promtail**: Đóng vai trò log agent, kết nối trực tiếp đến `/var/run/docker.sock` và `/var/lib/docker/containers` để tự động phát hiện mọi container đang chạy (qua cơ chế `docker_sd_configs`). Gán các nhãn có nghĩa như `container`, `service`, `compose_service`, `stream` và loại bỏ định dạng JSON envelope của Docker.
+   - **Loki**: Đóng vai trò time-series log database hiệu năng cao, lưu trữ các chuỗi log dạng index-less kết hợp TSDB schema và lưu trữ bền vững qua volume `loki_data`.
+   - **Grafana Data Source**: Tự động liên kết Loki làm Data Source nội bộ (`http://loki:3100`) qua cơ chế provisioning, cho phép truy vấn trực quan tại mục **Explore**.
+2. **Các truy vấn LogQL tiêu biểu:**
+   - Xem toàn bộ log container: `{container=~".+"}`
+   - Lọc log lỗi Backend hoặc Nginx: `{container=~"hotel_backend|hotel_nginx"} |~ "(?i)error|exception|fatal|fail"`
+   - Đếm số dòng log lỗi toàn hệ thống trong 5 phút: `sum(count_over_time({container=~".+"} |~ "(?i)error|exception|fatal" [5m]))`
+   - *Chi tiết tài liệu và các câu lệnh truy vấn bổ sung xem tại file [docs/logql-queries.md](docs/logql-queries.md).*
+
+### 8. Lệnh dừng hệ thống khi không sử dụng
 ```bash
 # Dừng các container (giữ nguyên toàn bộ dữ liệu trong volume)
 docker compose down
