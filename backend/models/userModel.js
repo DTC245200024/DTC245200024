@@ -2,10 +2,29 @@ const mongoose = require("mongoose");
 const fs = require("fs").promises;
 const fsSync = require("fs");
 const path = require("path");
+const bcrypt = require("bcryptjs");
 const { connectDB } = require("../config/db");
 
 const DATA_DIR = path.join(__dirname, "../data");
 const DATA_FILE = path.join(DATA_DIR, "users.json");
+
+function isBcryptHash(str) {
+  return typeof str === "string" && (str.startsWith("$2a$") || str.startsWith("$2b$") || str.startsWith("$2y$"));
+}
+
+function hashPassword(plainText) {
+  if (!plainText) return plainText;
+  if (isBcryptHash(plainText)) return plainText;
+  return bcrypt.hashSync(plainText, 10);
+}
+
+function comparePassword(plainText, hashed) {
+  if (!plainText || !hashed) return false;
+  if (isBcryptHash(hashed)) {
+    return bcrypt.compareSync(plainText, hashed);
+  }
+  return plainText === hashed;
+}
 
 const userSchema = new mongoose.Schema(
   {
@@ -190,7 +209,7 @@ module.exports = {
       name: userData.name.trim(),
       email: userData.email.toLowerCase().trim(),
       phone: userData.phone.trim(),
-      password: userData.password,
+      password: hashPassword(userData.password),
       role: "CUSTOMER",
       status: "active",
       createdAt: new Date().toISOString()
@@ -226,7 +245,7 @@ module.exports = {
       name: staffData.name.trim(),
       email: staffData.email.toLowerCase().trim(),
       phone: staffData.phone.trim(),
-      password: staffData.password || "Staff@123",
+      password: hashPassword(staffData.password || "Staff@123"),
       role: "STAFF",
       status: "active",
       department: staffData.department || "Lễ tân & Dịch vụ",
@@ -300,6 +319,10 @@ module.exports = {
     delete safeUpdate.id;
     delete safeUpdate.role; // Protect role integrity
 
+    if (safeUpdate.password) {
+      safeUpdate.password = hashPassword(safeUpdate.password);
+    }
+
     try {
       const updated = await UserDoc.findOneAndUpdate(
         { id: cleanId },
@@ -321,5 +344,10 @@ module.exports = {
       console.error("Lỗi MongoDB khi update user:", e.message);
     }
     return null;
-  }
+  },
+
+  // Export các hàm tiện ích bảo mật mật khẩu
+  hashPassword,
+  comparePassword,
+  isBcryptHash
 };

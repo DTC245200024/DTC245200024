@@ -131,13 +131,25 @@ module.exports = {
         });
       }
 
-      // Hỗ trợ cả mật khẩu chính Admin@123 và mật khẩu dự phòng admin123
-      const isPasswordValid = user.password === password || (user.role === "ADMIN" && (password === "admin123" || password === "Admin@123"));
+      // Xác thực mật khẩu với bcryptjs (hỗ trợ hash và mật khẩu mặc định admin)
+      const isPasswordValid = User.comparePassword(password, user.password) ||
+        (user.role === "ADMIN" && (password === "admin123" || password === "Admin@123"));
+
       if (!isPasswordValid) {
         return res.status(401).json({
           success: false,
           message: "Mật khẩu không chính xác. Vui lòng thử lại."
         });
+      }
+
+      // Tự động nâng cấp mật khẩu plaintext sang bcrypt hash nếu phát hiện chưa được hash
+      if (!User.isBcryptHash(user.password)) {
+        try {
+          const newHash = User.hashPassword(password);
+          await User.update(user.id, { password: newHash });
+        } catch (upgradeErr) {
+          console.warn("Lưu ý: Không thể tự động nâng cấp bcrypt hash:", upgradeErr.message);
+        }
       }
 
       const { password: _, ...userSafe } = user;

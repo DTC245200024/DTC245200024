@@ -27,8 +27,12 @@ WORKDIR /app
 # Cài đặt công cụ phục vụ web tĩnh serve
 RUN npm install -g serve
 
-# Lấy sản phẩm build từ stage 1
+# Lấy sản phẩm build từ stage 1 và phân quyền cho user node
 COPY --from=builder /app/dist ./dist
+RUN chown -R node:node /app
+
+# Chuyển sang user non-root
+USER node
 
 EXPOSE 5173
 

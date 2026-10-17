@@ -13,6 +13,33 @@ const { connectDB, mongoose } = require("./config/db");
 const app = express();
 const PORT = process.env.PORT || 5001;
 
+// Ẩn thông tin công nghệ backend (Security Hardening)
+app.disable("x-powered-by");
+
+// Cấu hình Rate Limiting (Chống Brute Force & DoS)
+const rateLimit = require("express-rate-limit");
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 phút
+  max: 500, // Tối đa 500 requests / 15 phút cho mỗi IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Quá nhiều yêu cầu từ địa chỉ IP này. Vui lòng thử lại sau 15 phút."
+  }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 phút
+  max: 30, // Tối đa 30 lần thử đăng nhập/đăng ký để chống Brute Force
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Quá nhiều lần thử đăng nhập/đăng ký. Vui lòng thử lại sau 15 phút."
+  }
+});
+
 // Cấu hình CORS linh hoạt cho Production (Render) và Local Development
 const clientEnv = process.env.CLIENT_URL || process.env.FRONTEND_URL;
 const allowedOrigins = clientEnv 
@@ -46,8 +73,14 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "x-user-id", "x-user-role", "*"]
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Giới hạn kích thước payload (Security Hardening: 10MB)
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Áp dụng Rate Limiting cho API
+app.use("/api/", generalLimiter);
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
 
 // Request logger
 app.use((req, res, next) => {
@@ -103,13 +136,14 @@ if (fs.existsSync(frontendDistPath)) {
   });
 }
 
-// Error handling middleware
+// Error handling middleware (Không trả stack trace hoặc thông tin nhạy cảm ở production)
 app.use((err, req, res, next) => {
   console.error("Server Error:", err);
-  res.status(500).json({
+  const isProd = process.env.NODE_ENV === "production";
+  res.status(err.status || 500).json({
     success: false,
-    message: "Lỗi máy chủ nội bộ: " + err.message,
-    error: err.message
+    message: isProd ? "Lỗi máy chủ nội bộ. Vui lòng thử lại sau." : ("Lỗi máy chủ nội bộ: " + err.message),
+    ...(isProd ? {} : { error: err.message, stack: err.stack })
   });
 });
 
