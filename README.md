@@ -92,17 +92,18 @@ npm run dev
 
 ---
 
-## 🐳 HƯỚNG DẪN TRIỂN KHAI BẰNG DOCKER DESKTOP TRÊN MACBOOK (MỤC 1 & 2)
+## 🐳 HƯỚNG DẪN TRIỂN KHAI BẰNG DOCKER DESKTOP TRÊN MACBOOK (MỤC 1, 2 & 3)
 
-Hệ thống được đóng gói hoàn chỉnh bằng **Docker Compose** gồm 4 dịch vụ độc lập kết nối qua mạng nội bộ `hotel-network`:
-- **`hotel_frontend`**: Giao diện người dùng React 19 + Vite SPA (Port `5173`).
-- **`hotel_backend`**: Máy chủ REST API Node.js Express (Port `5001`).
+Hệ thống được đóng gói hoàn chỉnh bằng **Docker Compose** gồm 5 dịch vụ độc lập kết nối qua mạng nội bộ `hotel-network`:
+- **`hotel_nginx`**: Nginx Reverse Proxy đóng vai trò cổng vào duy nhất (Port `80` HTTP & Port `443` HTTPS SSL tự ký), trang bị Security Headers.
+- **`hotel_frontend`**: Giao diện người dùng React 19 + Vite SPA (Port nội bộ `5173`).
+- **`hotel_backend`**: Máy chủ REST API Node.js Express (Port nội bộ `5001`).
 - **`hotel_database`**: Cơ sở dữ liệu NoSQL MongoDB 6.0 (Port `27017`), tự động nạp dữ liệu ban đầu từ thư mục `mongo-init/`.
 - **`hotel_db_admin`**: Giao diện Web trực quan quản lý Database Mongo-Express (Port `8081`).
 
 ### 1. Yêu cầu cài đặt
 - Đã cài đặt và mở **Docker Desktop** trên MacBook.
-- Đảm bảo các cổng `5001`, `5173`, `8081`, `27017` không bị chiếm dụng.
+- Đảm bảo các cổng `80`, `443`, `8081`, `27017` không bị chiếm dụng.
 
 ### 2. Cấu hình biến môi trường & Bảo mật
 Sao chép file cấu hình mẫu `.env.example` thành `.env` và tự thiết lập các mật khẩu an toàn theo ý muốn:
@@ -117,7 +118,7 @@ cp .env.example .env
 ### 3. Lệnh khởi chạy toàn bộ hệ thống bằng Docker Compose
 Mở Terminal tại thư mục gốc của dự án:
 ```bash
-# Build các image và chạy ngầm tất cả container
+# Build các image và chạy ngầm tất cả container (kèm Nginx reverse proxy)
 docker compose up -d --build
 ```
 
@@ -126,20 +127,24 @@ docker compose up -d --build
 # Xem danh sách các container đang chạy
 docker compose ps
 
+# Kiểm tra cú pháp cấu hình Nginx
+docker exec hotel_nginx nginx -t
+
+# Xem log thời gian thực của Nginx
+docker logs -f hotel_nginx
+
 # Xem log thời gian thực của backend
 docker logs -f hotel_backend
-
-# Xem log của database
-docker logs -f hotel_database
 ```
 
-### 5. Địa chỉ truy cập các dịch vụ trên trình duyệt
-| Dịch Vụ | Địa Chỉ Truy Cập | Cổng (Port) | Hướng Dẫn Thông Tin Đăng Nhập |
+### 5. Địa chỉ truy cập các dịch vụ trên trình duyệt (Qua Nginx Reverse Proxy)
+| Dịch Vụ | Địa Chỉ Truy Cập | Cổng (Port) | Ghi Chú & Hướng Dẫn Đăng Nhập |
 |---|---|---|---|
-| **Frontend Web** | [http://localhost:5173](http://localhost:5173) | `5173` | • **Admin**: Sử dụng email và mật khẩu được cấu hình trong biến môi trường `ADMIN_EMAIL` và `ADMIN_PASSWORD` tại file `.env`.<br>• **Khách hàng**: Đăng ký tài khoản mới trực tiếp tại `/register` hoặc sử dụng tài khoản mẫu của hệ thống. |
-| **Backend API** | [http://localhost:5001/api/health](http://localhost:5001/api/health) | `5001` | REST API (Kiểm tra trạng thái hệ thống: `/api/health`). Cổng cấu hình qua biến `BACKEND_PORT` (mặc định `5001`). |
-| **Quản lý DB (Mongo-Express)** | [http://localhost:8081](http://localhost:8081) | `8081` | Sử dụng thông tin đăng nhập Web GUI được cấu hình trong biến môi trường `DB_ADMIN_USER` và `DB_ADMIN_PASSWORD` tại file `.env`. Cổng cấu hình qua `DB_ADMIN_PORT`. |
-| **Cơ sở dữ liệu MongoDB** | `localhost:27017` | `27017` | Kết nối qua `DB_USER` và `DB_PASSWORD` từ file `.env` (Database: `hotel_booking_db`). Cổng cấu hình qua biến `DB_PORT`. |
+| **Cổng vào Website (Nginx HTTP)** | [http://localhost](http://localhost) | `80` | Giao diện Web chính thức qua Nginx Reverse Proxy, chuyển hướng `/` về Frontend, `/api` về Backend. |
+| **Cổng vào Website (Nginx HTTPS)** | [https://localhost](https://localhost) | `443` | HTTPS bảo mật chứng chỉ SSL tự ký (Self-signed Certificate). |
+| **Backend API Health Check** | [http://localhost/api/health](http://localhost/api/health) | `80 / 443` | REST API qua Nginx (có Security Headers: nosniff, SAMEORIGIN, strict-origin). |
+| **Quản lý DB (Mongo-Express)** | [http://localhost:8081](http://localhost:8081) | `8081` | Quản lý MongoDB Web GUI (`admin` / `AdminPass@123`). Cổng cấu hình qua `DB_ADMIN_PORT`. |
+| **Cơ sở dữ liệu MongoDB** | `localhost:27017` | `27017` | Kết nối trực tiếp qua `DB_USER` và `DB_PASSWORD` (Database: `hotel_booking_db`). |
 
 ### 6. Lệnh dừng hệ thống khi không sử dụng
 ```bash

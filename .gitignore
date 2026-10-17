@@ -13,3 +13,9 @@ backend/data/users.json
 backend/data/users.backup.json
 backend/data/bookings.json
 backend/data/bookings.backup.json
+
+# SSL Certificates & Private Keys (Security)
+nginx/ssl/
+*.key
+*.crt
+*.pem
