@@ -164,6 +164,8 @@ const server = app.listen(PORT, async () => {
 
   try {
     await connectDB();
+    const { autoSeedDatabase } = require("./config/seed");
+    await autoSeedDatabase();
   } catch (err) {
     console.error("⚠️ Không thể kết nối PostgreSQL ngay khi khởi động:", err.message);
   }

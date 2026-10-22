@@ -59,7 +59,17 @@ export default function BookingPage({
     if (preSelectedBooking?.guests) setGuests(preSelectedBooking.guests);
   }, [preSelectedBooking]);
 
-  const selectedRoom = rooms.find(r => r.id === selectedRoomId) || rooms[0] || null;
+  // Tự động đồng bộ selectedRoomId nếu chưa chọn hoặc id cũ không còn tồn tại
+  useEffect(() => {
+    if (rooms && rooms.length > 0) {
+      const exists = rooms.some(r => r.id === selectedRoomId || r.roomCode === selectedRoomId);
+      if (!exists && !preSelectedBooking?.roomId) {
+        setSelectedRoomId(rooms[0].id || rooms[0].roomCode);
+      }
+    }
+  }, [rooms, selectedRoomId, preSelectedBooking]);
+
+  const selectedRoom = rooms.find(r => r.id === selectedRoomId || r.roomCode === selectedRoomId) || rooms[0] || null;
   const nights = calculateNights(checkIn, checkOut);
   const roomPrice = selectedRoom ? selectedRoom.price : 0;
   const totalPrice = nights * roomPrice;
@@ -85,7 +95,8 @@ export default function BookingPage({
         customerName: customerName.trim(),
         phone: phone.trim(),
         email: email.trim(),
-        roomId: selectedRoom.id,
+        roomId: selectedRoom.id || selectedRoom.roomCode,
+        roomCode: selectedRoom.roomCode || selectedRoom.id,
         roomName: selectedRoom.name,
         roomType: selectedRoom.type,
         roomPrice: roomPrice,

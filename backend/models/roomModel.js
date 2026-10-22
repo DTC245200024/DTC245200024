@@ -92,11 +92,39 @@ module.exports = {
     return rooms;
   },
 
+  async count() {
+    const { rows } = await query("SELECT COUNT(*)::int AS count FROM rooms");
+    return rows[0].count;
+  },
+
   async getById(id) {
     if (!id) return null;
+    const cleanId = String(id).trim();
     const { rows } = await query(
-      `SELECT ${COLUMNS} FROM rooms WHERE id = $1 OR room_code = $1 ORDER BY (id = $1) DESC LIMIT 1`,
-      [String(id).trim()]
+      `SELECT ${COLUMNS} FROM rooms 
+        WHERE id = $1 
+           OR room_code = $1 
+           OR lower(id) = lower($1) 
+           OR lower(room_code) = lower($1) 
+        ORDER BY (id = $1) DESC LIMIT 1`,
+      [cleanId]
+    );
+    if (rows[0]) return mapRoom(rows[0]);
+
+    // Fallback: Tìm theo tên nếu id truyền vào là tên phòng
+    const { rows: nameRows } = await query(
+      `SELECT ${COLUMNS} FROM rooms WHERE lower(name) = lower($1) OR name ILIKE $1 LIMIT 1`,
+      [cleanId]
+    );
+    return mapRoom(nameRows[0]);
+  },
+
+  async getByName(name) {
+    if (!name) return null;
+    const cleanName = String(name).trim();
+    const { rows } = await query(
+      `SELECT ${COLUMNS} FROM rooms WHERE lower(name) = lower($1) OR name ILIKE $1 LIMIT 1`,
+      [cleanName]
     );
     return mapRoom(rows[0]);
   },

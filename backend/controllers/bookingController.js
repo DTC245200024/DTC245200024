@@ -73,7 +73,28 @@ module.exports = {
         });
       }
 
-      const room = await Room.getById(roomId);
+      const rawRoomId = roomId || req.body.roomCode || req.body.room_id || req.body.id;
+      let room = await Room.getById(rawRoomId);
+
+      // Nếu chưa thấy bằng id/mã phòng, thử tìm theo tên phòng (nếu có truyền)
+      if (!room && req.body.roomName) {
+        room = await Room.getByName(req.body.roomName);
+      }
+
+      // Tự động phục hồi & nạp dữ liệu mẫu nếu database đang trống phòng
+      if (!room) {
+        try {
+          const totalRooms = await Room.count();
+          if (totalRooms === 0) {
+            const { autoSeedDatabase } = require("../config/seed");
+            await autoSeedDatabase();
+            room = (await Room.getById(rawRoomId)) || (req.body.roomName ? await Room.getByName(req.body.roomName) : null);
+          }
+        } catch (seedErr) {
+          console.error("Auto-seed check error:", seedErr.message);
+        }
+      }
+
       if (!room) {
         return res.status(404).json({
           success: false,
@@ -98,6 +119,8 @@ module.exports = {
 
       const bookingPayload = {
         ...req.body,
+        roomId: room.id,
+        roomCode: room.roomCode,
         userId,
         roomPrice,
         roomName,

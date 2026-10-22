@@ -301,12 +301,20 @@ module.exports = {
 
     return withTransaction(async (client) => {
       // Khóa dòng phòng: các đơn đặt cùng một phòng được xử lý tuần tự
-      const roomRes = await client.query(
+      let roomRes = await client.query(
         `SELECT id, room_code, name, type FROM rooms
-          WHERE id = $1 OR room_code = $1
+          WHERE id = $1 OR room_code = $1 OR lower(id) = lower($1) OR lower(room_code) = lower($1)
           ORDER BY (id = $1) DESC LIMIT 1 FOR UPDATE`,
         [String(bookingData.roomId).trim()]
       );
+      if (!roomRes.rows[0] && bookingData.roomName) {
+        roomRes = await client.query(
+          `SELECT id, room_code, name, type FROM rooms
+            WHERE lower(name) = lower($1) OR name ILIKE $1
+            LIMIT 1 FOR UPDATE`,
+          [String(bookingData.roomName).trim()]
+        );
+      }
       const room = roomRes.rows[0] || null;
 
       if (room) {
