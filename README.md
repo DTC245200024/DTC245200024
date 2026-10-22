@@ -93,6 +93,36 @@ sudo docker compose ps
 
 ---
 
+## 8. Cấu trúc thư mục dự án
+
+```text
+DTC245200024/
+├── backend/
+│   ├── Dockerfile
+│   ├── data/
+│   └── uploads/
+├── frontend/
+│   └── Dockerfile
+├── mongo-init/
+├── nginx/
+│   ├── Dockerfile
+│   └── nginx.conf
+├── monitoring/
+│   ├── prometheus/
+│   │   └── prometheus.yml
+│   ├── grafana/
+│   │   ├── provisioning/
+│   │   └── dashboards/
+│   ├── loki/
+│   │   └── loki.yml
+│   └── promtail/
+│       └── promtail.yml
+├── docker-compose.yml
+├── .env.example
+├── .gitignore
+└── README.md
+```
+
 ## 👥 TÀI KHOẢN TRẢI NGHIỆM & HƯỚNG DẪN ĐĂNG NHẬP
 
 Hệ thống hỗ trợ 2 nhóm vai trò người dùng chính:
