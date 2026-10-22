@@ -246,3 +246,40 @@ docker compose down
 | **POST** | `/api/bookings` | Đặt phòng mới |
 | **PUT** | `/api/bookings/:id`| Cập nhật trạng thái đơn |
 | **GET** | `/api/stats` | Thống kê doanh thu & phòng (Admin) |
+
+### 9. cấu trúc dụ án
+DTC245200024/
+├── backend/
+│   ├── Dockerfile
+│   ├── data/
+│   ├── uploads/
+│   └── ...                 # Mã nguồn Node.js + Express REST API
+│
+├── frontend/
+│   ├── Dockerfile
+│   └── ...                 # Mã nguồn React 19 + Vite
+│
+├── mongo-init/
+│   └── ...                 # Khởi tạo cơ sở dữ liệu MongoDB
+│
+├── nginx/
+│   ├── Dockerfile
+│   ├── nginx.conf          # Reverse proxy và security headers
+│   └── ...                 # Cấu hình SSL nếu có
+│
+├── monitoring/
+│   ├── prometheus/
+│   │   └── prometheus.yml
+│   ├── grafana/
+│   │   ├── provisioning/
+│   │   └── dashboards/
+│   ├── loki/
+│   │   └── loki.yml
+│   └── promtail/
+│       └── promtail.yml
+│
+├── docker-compose.yml      # Khai báo và kết nối các container
+├── .env                    # Biến môi trường và thông tin cấu hình
+├── .env.example            # Mẫu cấu hình, nếu có
+├── .gitignore
+└── README.md               # Hướng dẫn cài đặt và sử dụng
