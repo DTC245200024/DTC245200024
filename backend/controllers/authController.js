@@ -131,9 +131,8 @@ module.exports = {
         });
       }
 
-      // Xác thực mật khẩu với bcryptjs (hỗ trợ hash và mật khẩu mặc định admin)
-      const isPasswordValid = User.comparePassword(password, user.password) ||
-        (user.role === "ADMIN" && (password === "admin123" || password === "Admin@123"));
+      // Xác thực mật khẩu với bcryptjs (so sánh với hash lưu trong PostgreSQL)
+      const isPasswordValid = User.comparePassword(password, user.password);
 
       if (!isPasswordValid) {
         return res.status(401).json({

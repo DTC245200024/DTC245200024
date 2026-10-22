@@ -8,10 +8,14 @@ const bookingRoutes = require("./routes/bookings");
 const authRoutes = require("./routes/auth");
 const staffRoutes = require("./routes/staff");
 const bookingController = require("./controllers/bookingController");
-const { connectDB, mongoose } = require("./config/db");
+const { connectDB, checkConnection, closeDB } = require("./config/db");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+
+// Tin cậy reverse proxy (Nginx) đúng 1 hop để lấy đúng client IP cho express-rate-limit
+// Khắc phục triệt để lỗi ERR_ERL_UNEXPECTED_X_FORWARDED_FOR mà vẫn bảo đảm an toàn bảo mật
+app.set("trust proxy", 1);
 
 // Ẩn thông tin công nghệ backend (Security Hardening)
 app.disable("x-powered-by");
@@ -89,12 +93,13 @@ app.use((req, res, next) => {
 });
 
 // Health check
-app.get("/api/health", (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
-  res.json({
-    status: "online",
-    database: dbStatus,
-    databaseName: mongoose.connection.name || "hotel_booking_db",
+app.get("/api/health", async (req, res) => {
+  const db = await checkConnection();
+  res.status(db.connected ? 200 : 503).json({
+    status: db.connected ? "online" : "degraded",
+    database: db.connected ? "connected" : "disconnected",
+    databaseName: db.name,
+    databaseEngine: "PostgreSQL",
     message: "Hệ thống Đặt phòng Khách sạn API đang hoạt động bình thường",
     timestamp: new Date().toISOString()
   });
@@ -147,7 +152,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log(`======================================================`);
   console.log(`🏨 HOTEL BOOKING BACKEND SERVER ĐANG CHẠY TẠI:`);
   console.log(`👉 http://localhost:${PORT}`);
@@ -160,6 +165,21 @@ app.listen(PORT, async () => {
   try {
     await connectDB();
   } catch (err) {
-    console.error("⚠️ Không thể kết nối MongoDB ngay khi khởi động:", err.message);
+    console.error("⚠️ Không thể kết nối PostgreSQL ngay khi khởi động:", err.message);
   }
 });
+
+// Tắt server êm: đóng HTTP server rồi đóng pool PostgreSQL
+function shutdown(signal) {
+  console.log(`${signal} nhận được, đang tắt server...`);
+  server.close(async () => {
+    try {
+      await closeDB();
+    } finally {
+      process.exit(0);
+    }
+  });
+  setTimeout(() => process.exit(1), 10000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

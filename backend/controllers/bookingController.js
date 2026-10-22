@@ -118,6 +118,12 @@ module.exports = {
       });
     } catch (error) {
       console.error("Error creating booking:", error);
+      if (error.code === "ROOM_CONFLICT") {
+        return res.status(409).json({ success: false, message: error.message });
+      }
+      if (error.status === 400) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
       res.status(500).json({ success: false, message: "Lỗi máy chủ khi xử lý đặt phòng: " + error.message });
     }
   },
@@ -169,43 +175,30 @@ module.exports = {
         });
       }
 
-      // Kiểm tra trùng lịch phòng (Requirement 5: Không cho xác nhận trùng hoặc đặt phòng bị trùng lịch)
-      const allBookings = await Booking.getAll();
-      const newIn = new Date(booking.checkIn);
-      const newOut = new Date(booking.checkOut);
-
-      const conflictBooking = allBookings.find(b => {
-        // Bỏ qua chính đơn này
-        if (b.id === booking.id || b.bookingCode === booking.bookingCode) return false;
-        if (b.roomId !== booking.roomId) return false;
-
-        // Chỉ xét các đơn đang chiếm giữ phòng
-        const isOccupying = ["Đã xác nhận", "Đã nhận phòng", "Khách yêu cầu trả phòng"].includes(b.status);
-        if (!isOccupying) return false;
-
-        const exIn = new Date(b.checkIn);
-        const exOut = new Date(b.checkOut);
-
-        // Công thức kiểm tra giao khoảng thời gian: newIn < exOut && newOut > exIn
-        return newIn < exOut && newOut > exIn;
-      });
-
-      if (conflictBooking) {
-        return res.status(400).json({
-          success: false,
-          message: `Không thể xác nhận: Phòng "${booking.roomName}" đã có đơn "${conflictBooking.bookingCode}" (Khách: ${conflictBooking.customerName}) đặt trùng lịch từ ${conflictBooking.checkIn} đến ${conflictBooking.checkOut}.`
-        });
-      }
-
-      // Cập nhật trạng thái đơn thành "Đã xác nhận"
+      // Kiểm tra trùng lịch phòng + cập nhật trạng thái trong CÙNG MỘT transaction PostgreSQL
+      // (Requirement 5: Không cho xác nhận trùng hoặc đặt phòng bị trùng lịch)
       // LƯU Ý (Requirement 6): Việc xác nhận đơn KHÔNG đồng nghĩa với xác nhận đã thanh toán -> GIỮ NGUYÊN paymentStatus
-      const updated = await Booking.update(req.params.id, {
+      const result = await Booking.confirm(req.params.id, {
         status: "Đã xác nhận",
         checkInStatus: "Chưa nhận phòng",
         checkOutStatus: "Chưa trả phòng",
         confirmedAt: new Date().toISOString(),
         confirmedBy: req.body.staffName || (userRole === "ADMIN" ? "Quản trị viên" : "Lễ tân")
       });
+
+      if (result.notFound) {
+        return res.status(404).json({ success: false, message: "Không tìm thấy đơn đặt phòng để xác nhận" });
+      }
+
+      if (result.conflict) {
+        const c = result.conflict;
+        return res.status(400).json({
+          success: false,
+          message: `Không thể xác nhận: Phòng "${booking.roomName}" đã có đơn "${c.bookingCode}" (Khách: ${c.customerName}) đặt trùng lịch từ ${c.checkIn} đến ${c.checkOut}.`
+        });
+      }
+
+      const updated = result.booking;
 
       // Cập nhật tình trạng phòng sang "Đã đặt" nếu phòng đang trống
       if (room.status === "Trống") {
@@ -630,6 +623,9 @@ module.exports = {
       });
     } catch (error) {
       console.error("Error updating booking:", error);
+      if (error.code === "ROOM_CONFLICT") {
+        return res.status(409).json({ success: false, message: error.message });
+      }
       res.status(500).json({ success: false, message: "Lỗi máy chủ khi cập nhật đơn đặt phòng: " + error.message });
     }
   },

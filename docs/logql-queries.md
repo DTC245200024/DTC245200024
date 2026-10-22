@@ -1,12 +1,12 @@
 # 📑 TÀI LIỆU HƯỚNG DẪN TRUY VẤN LOGQL (LOKI + PROMTAIL)
 ## Hệ Thống Đặt Phòng Khách Sạn (Hotel Booking System) - Mục 5
 
-Hệ thống quản lý và thu thập log tập trung sử dụng **Grafana Loki** kết hợp cùng **Promtail** để thu thập tự động toàn bộ log từ các Docker container của dự án (`hotel_nginx`, `hotel_backend`, `hotel_database`, `hotel_frontend`, `hotel_prometheus`, `hotel_grafana`, `hotel_cadvisor`,...).
+Hệ thống quản lý và thu thập log tập trung sử dụng **Grafana Loki** kết hợp cùng **Promtail** để thu thập tự động toàn bộ log từ các Docker container của dự án (`hotel_nginx`, `hotel_backend`, `hotel_postgres`, `hotel_pgadmin`, `hotel_frontend`, `hotel_prometheus`, `hotel_grafana`, `hotel_cadvisor`,...).
 
 Các nhãn (labels) thực tế được cấu hình tự động bởi Promtail:
-- `container`: Tên đầy đủ của container Docker (ví dụ: `hotel_backend`, `hotel_nginx`, `hotel_database`, `hotel_prometheus`,...).
-- `service`: Tên dịch vụ chuẩn hóa (ví dụ: `backend`, `nginx`, `database`, `frontend`, `loki`,...).
-- `compose_service`: Tên service khai báo trong Docker Compose (`backend`, `nginx`, `database`,...).
+- `container`: Tên đầy đủ của container Docker (ví dụ: `hotel_backend`, `hotel_nginx`, `hotel_postgres`, `hotel_prometheus`,...).
+- `service`: Tên dịch vụ chuẩn hóa (ví dụ: `backend`, `nginx`, `postgres`, `frontend`, `loki`,...).
+- `compose_service`: Tên service khai báo trong Docker Compose (`backend`, `nginx`, `postgres`,...).
 - `stream`: Luồng đầu ra của tiến trình (`stdout` hoặc `stderr`).
 
 ---
@@ -82,13 +82,13 @@ Các nhãn (labels) thực tế được cấu hình tự động bởi Promtail
 {container="hotel_nginx"} |= "/api/"
 ```
 
-### 5. Xem log hoạt động của Cơ sở dữ liệu MongoDB
+### 5. Xem log hoạt động của Cơ sở dữ liệu PostgreSQL
 ```logql
-{container="hotel_database"}
+{container="hotel_postgres"}
 ```
 *Lọc các thao tác liên quan đến tạo kết nối hoặc xác thực:*
 ```logql
-{container="hotel_database"} |~ "(?i)connection|auth"
+{container="hotel_postgres"} |~ "(?i)connection|auth|error|fatal"
 ```
 
 ### 6. Xem log lỗi từ luồng standard error (`stderr`) của Backend

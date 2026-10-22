@@ -1,398 +1,407 @@
-const mongoose = require("mongoose");
-const path = require("path");
-const fs = require("fs").promises;
-const fsSync = require("fs");
-const { connectDB } = require("../config/db");
+const { query, withTransaction } = require("../config/db");
 const User = require("./userModel");
 
-const DATA_DIR = path.join(__dirname, "../data");
-const DATA_FILE = path.join(DATA_DIR, "bookings.json");
+// Các trạng thái đơn đang "chiếm giữ" phòng (phải khớp với ràng buộc EXCLUDE trong schema)
+const OCCUPYING_STATUSES = ["Đã xác nhận", "Đã nhận phòng", "Khách yêu cầu trả phòng"];
 
-// Schema MongoDB chuẩn cho collection 'bookings' trong database 'hotel_booking_db'
-const bookingSchema = new mongoose.Schema(
-  {
-    id: { type: String, required: true, index: true },
-    bookingCode: { type: String, required: true, unique: true, index: true },
-    userId: { type: String, default: null, index: true },
-    customerName: { type: String, required: true, trim: true },
-    phone: { type: String, required: true, trim: true },
-    email: { type: String, required: true, trim: true },
-    roomId: { type: String, required: true, index: true },
-    roomName: { type: String, default: "Phòng khách sạn" },
-    roomType: { type: String, default: "Phòng tiêu chuẩn" },
-    checkIn: { type: String, required: true },
-    checkOut: { type: String, required: true },
-    nights: { type: Number, required: true, min: 1 },
-    guests: { type: Number, default: 1, min: 1 },
-    roomPrice: { type: Number, required: true, min: 0 },
-    totalPrice: { type: Number, required: true, min: 0 },
-    paymentMethod: { type: String, default: "cash" },
-    paymentStatus: { type: String, default: "Chưa thanh toán" },
-    status: { type: String, default: "Chờ xác nhận", index: true },
-    checkInStatus: { type: String, default: "Chưa nhận phòng" },
-    checkOutStatus: { type: String, default: "Chưa trả phòng" },
-    specialRequests: { type: String, default: "" },
-    confirmedAt: { type: String, default: null },
-    confirmedBy: { type: String, default: null },
-    actualCheckInTime: { type: String, default: null },
-    checkedInBy: { type: String, default: null },
-    actualCheckOutTime: { type: String, default: null },
-    checkedOutBy: { type: String, default: null },
-    paidAt: { type: String, default: null },
-    paymentConfirmedBy: { type: String, default: null },
-    cancelledAt: { type: String, default: null },
-    cancelledBy: { type: String, default: null },
-    cancelReason: { type: String, default: null },
-    checkoutRequestedAt: { type: String, default: null },
-    checkoutRequestedDate: { type: String, default: null },
-    earlyCheckoutReason: { type: String, default: null },
-    createdAt: { type: String, default: () => new Date().toISOString() },
-    updatedAt: { type: String, default: () => new Date().toISOString() }
-  },
-  {
-    collection: "bookings",
-    timestamps: false,
-    versionKey: false
-  }
-);
+const SELECT_COLUMNS = `
+  booking_code, user_id, customer_name, phone, email, room_id, room_code, room_name, room_type,
+  check_in, check_out, nights, guests, room_price, total_price, payment_method, payment_status,
+  status, check_in_status, check_out_status, special_requests, confirmed_at, confirmed_by,
+  actual_check_in_time, checked_in_by, actual_check_out_time, checked_out_by, paid_at,
+  payment_confirmed_by, cancelled_at, cancelled_by, cancel_reason, checkout_requested_at,
+  checkout_requested_date, early_checkout_reason, created_at, updated_at`;
 
-// Tạo Model Mongoose liên kết trực tiếp collection bookings
-const BookingDoc = mongoose.models.Booking || mongoose.model("Booking", bookingSchema);
+const iso = (v) => (v ? v.toISOString() : null);
 
-// Đọc và sao lưu tệp JSON phụ trợ để giữ tính tương thích
-async function readBackupBookings() {
-  try {
-    if (fsSync.existsSync(DATA_FILE)) {
-      const content = await fs.readFile(DATA_FILE, "utf-8");
-      const list = JSON.parse(content);
-      return Array.isArray(list) ? list : [];
-    }
-  } catch (e) {
-    console.error("Lỗi đọc backup bookings.json:", e.message);
-  }
-  return [];
+// Chuyển hàng PostgreSQL sang đối tượng có cùng cấu trúc với API cũ
+function mapBooking(row) {
+  if (!row) return null;
+  return {
+    id: row.booking_code,
+    bookingCode: row.booking_code,
+    userId: row.user_id,
+    customerName: row.customer_name,
+    phone: row.phone,
+    email: row.email,
+    roomId: row.room_id || row.room_code,
+    roomName: row.room_name,
+    roomType: row.room_type,
+    checkIn: row.check_in,
+    checkOut: row.check_out,
+    nights: row.nights,
+    guests: row.guests,
+    roomPrice: row.room_price,
+    totalPrice: row.total_price,
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    status: row.status,
+    checkInStatus: row.check_in_status,
+    checkOutStatus: row.check_out_status,
+    specialRequests: row.special_requests,
+    confirmedAt: iso(row.confirmed_at),
+    confirmedBy: row.confirmed_by,
+    actualCheckInTime: iso(row.actual_check_in_time),
+    checkedInBy: row.checked_in_by,
+    actualCheckOutTime: iso(row.actual_check_out_time),
+    checkedOutBy: row.checked_out_by,
+    paidAt: iso(row.paid_at),
+    paymentConfirmedBy: row.payment_confirmed_by,
+    cancelledAt: iso(row.cancelled_at),
+    cancelledBy: row.cancelled_by,
+    cancelReason: row.cancel_reason,
+    checkoutRequestedAt: iso(row.checkout_requested_at),
+    checkoutRequestedDate: row.checkout_requested_date,
+    earlyCheckoutReason: row.early_checkout_reason,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at)
+  };
 }
 
-async function writeBackupBookings(bookings) {
-  try {
-    if (!fsSync.existsSync(DATA_DIR)) {
-      fsSync.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    await fs.writeFile(DATA_FILE, JSON.stringify(bookings, null, 2), "utf-8");
-  } catch (e) {
-    console.error("Lỗi ghi backup bookings.json:", e.message);
+// Chuẩn hóa giá trị ngày về dạng "YYYY-MM-DD"
+function normalizeDate(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  if (isNaN(d.getTime())) {
+    const err = new Error("Định dạng ngày không hợp lệ");
+    err.status = 400;
+    throw err;
   }
+  return d.toISOString().slice(0, 10);
 }
 
-// Đồng bộ các đơn đặt phòng từ JSON sang MongoDB khi khởi động (nếu MongoDB chưa có)
-let hasSyncedInitial = false;
-async function syncInitialData() {
-  if (hasSyncedInitial) return;
-  try {
-    await connectDB();
-    const backupList = await readBackupBookings();
-    if (backupList.length > 0) {
-      for (const b of backupList) {
-        if (!b.bookingCode && !b.id) continue;
-        const code = b.bookingCode || b.id;
-        await BookingDoc.updateOne(
-          { $or: [{ bookingCode: code }, { id: code }] },
-          { $setOnInsert: { ...b, id: code, bookingCode: code } },
-          { upsert: true }
-        );
-      }
+function diffNights(checkIn, checkOut) {
+  const a = Date.parse(`${checkIn}T00:00:00Z`);
+  const b = Date.parse(`${checkOut}T00:00:00Z`);
+  return Math.round((b - a) / 86400000);
+}
+
+function createConflictError(conflict, roomName) {
+  const err = new Error(
+    `Phòng "${roomName || "đã chọn"}" đã có đơn "${conflict.booking_code}" (Khách: ${conflict.customer_name}) ` +
+      `đặt trùng lịch từ ${conflict.check_in} đến ${conflict.check_out}.`
+  );
+  err.code = "ROOM_CONFLICT";
+  err.status = 409;
+  err.conflict = {
+    bookingCode: conflict.booking_code,
+    customerName: conflict.customer_name,
+    checkIn: conflict.check_in,
+    checkOut: conflict.check_out
+  };
+  return err;
+}
+
+// Tìm đơn đang chiếm phòng có khoảng ngày giao với [checkIn, checkOut)
+async function findConflict(db, roomId, checkIn, checkOut, excludeCode) {
+  const { rows } = await db.query(
+    `SELECT booking_code, customer_name, check_in, check_out
+       FROM bookings
+      WHERE room_id = $1
+        AND booking_code <> COALESCE($4, '')
+        AND status = ANY($5)
+        AND $2::date < check_out
+        AND $3::date > check_in
+      LIMIT 1`,
+    [roomId, checkIn, checkOut, excludeCode || null, OCCUPYING_STATUSES]
+  );
+  return rows[0] || null;
+}
+
+// Sinh mã đặt phòng duy nhất dạng BK-YYYY-XXXX (gọi trong transaction đã khóa advisory)
+async function generateBookingCode(client) {
+  const year = String(new Date().getFullYear());
+  const { rows } = await client.query(
+    `SELECT COALESCE(MAX((substring(booking_code FROM '^BK-[0-9]{4}-([0-9]+)$'))::bigint), 1000) AS max_number
+       FROM bookings
+      WHERE booking_code LIKE $1`,
+    [`BK-${year}-%`]
+  );
+  return `BK-${year}-${Number(rows[0].max_number) + 1}`;
+}
+
+// Ánh xạ trường API -> cột DB cho thao tác cập nhật
+const UPDATE_FIELDS = {
+  userId: ["user_id", (v) => v],
+  customerName: ["customer_name", (v) => String(v).trim()],
+  phone: ["phone", (v) => String(v).trim()],
+  email: ["email", (v) => String(v).trim()],
+  roomName: ["room_name", (v) => v],
+  roomType: ["room_type", (v) => v],
+  checkIn: ["check_in", normalizeDate],
+  checkOut: ["check_out", normalizeDate],
+  nights: ["nights", (v) => Number(v)],
+  guests: ["guests", (v) => Number(v)],
+  roomPrice: ["room_price", (v) => Number(v)],
+  totalPrice: ["total_price", (v) => Number(v)],
+  paymentMethod: ["payment_method", (v) => v],
+  paymentStatus: ["payment_status", (v) => v],
+  status: ["status", (v) => v],
+  checkInStatus: ["check_in_status", (v) => v],
+  checkOutStatus: ["check_out_status", (v) => v],
+  specialRequests: ["special_requests", (v) => v],
+  confirmedAt: ["confirmed_at", (v) => v],
+  confirmedBy: ["confirmed_by", (v) => v],
+  actualCheckInTime: ["actual_check_in_time", (v) => v],
+  checkedInBy: ["checked_in_by", (v) => v],
+  actualCheckOutTime: ["actual_check_out_time", (v) => v],
+  checkedOutBy: ["checked_out_by", (v) => v],
+  paidAt: ["paid_at", (v) => v],
+  paymentConfirmedBy: ["payment_confirmed_by", (v) => v],
+  cancelledAt: ["cancelled_at", (v) => v],
+  cancelledBy: ["cancelled_by", (v) => v],
+  cancelReason: ["cancel_reason", (v) => v],
+  checkoutRequestedAt: ["checkout_requested_at", (v) => v],
+  checkoutRequestedDate: ["checkout_requested_date", normalizeDate],
+  earlyCheckoutReason: ["early_checkout_reason", (v) => v]
+};
+
+async function runUpdate(db, id, updateData) {
+  const sets = [];
+  const values = [];
+
+  for (const [key, [column, convert]] of Object.entries(UPDATE_FIELDS)) {
+    if (updateData[key] === undefined) continue;
+    const value = updateData[key] === null ? null : convert(updateData[key]);
+    values.push(value);
+    sets.push(`${column} = $${values.length}`);
+  }
+
+  // Đổi phòng: chỉ chấp nhận khi phòng tồn tại, đồng thời cập nhật bản chụp room_code
+  if (updateData.roomId) {
+    const { rows } = await db.query(
+      "SELECT id, room_code FROM rooms WHERE id = $1 OR room_code = $1 ORDER BY (id = $1) DESC LIMIT 1",
+      [String(updateData.roomId).trim()]
+    );
+    if (rows[0]) {
+      values.push(rows[0].id);
+      sets.push(`room_id = $${values.length}`);
+      values.push(rows[0].room_code);
+      sets.push(`room_code = $${values.length}`);
     }
-    hasSyncedInitial = true;
+  }
+
+  sets.push("updated_at = now()");
+  values.push(String(id).trim());
+
+  try {
+    const { rows } = await db.query(
+      `UPDATE bookings SET ${sets.join(", ")}
+        WHERE booking_code = $${values.length}
+        RETURNING ${SELECT_COLUMNS}`,
+      values
+    );
+    return mapBooking(rows[0]);
   } catch (err) {
-    console.error("Lỗi đồng bộ dữ liệu ban đầu vào MongoDB:", err.message);
+    // 23P01 = exclusion_violation: DB chặn đơn trùng lịch phòng
+    if (err.code === "23P01") {
+      const conflictErr = new Error("Phòng đã có đơn khác đang giữ chỗ trùng khoảng thời gian này.");
+      conflictErr.code = "ROOM_CONFLICT";
+      conflictErr.status = 409;
+      throw conflictErr;
+    }
+    throw err;
   }
 }
 
-// Tự động tạo mã đặt phòng duy nhất dạng BK-YYYY-XXXX dựa trên MongoDB
-async function generateUniqueBookingCode() {
-  await connectDB();
-  const currentYear = new Date().getFullYear();
-  let maxNumber = 1000;
-
-  try {
-    // 1. Quét mã từ MongoDB
-    const docs = await BookingDoc.find(
-      {
-        $or: [
-          { bookingCode: new RegExp(`^BK-${currentYear}-\\d+`, "i") },
-          { id: new RegExp(`^BK-${currentYear}-\\d+`, "i") }
-        ]
-      },
-      { bookingCode: 1, id: 1 }
-    ).lean();
-
-    for (const b of docs) {
-      const code = b.bookingCode || b.id || "";
-      const match = code.match(/BK-\d{4}-(\d+)/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (!isNaN(num) && num > maxNumber) {
-          maxNumber = num;
-        }
-      }
-    }
-
-    // 2. Kiểm tra thêm tệp backup để đảm bảo không trùng
-    const backupList = await readBackupBookings();
-    for (const b of backupList) {
-      const code = b.bookingCode || b.id || "";
-      const match = code.match(/BK-\d{4}-(\d+)/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (!isNaN(num) && num > maxNumber) {
-          maxNumber = num;
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Lỗi khi tìm mã booking lớn nhất:", err.message);
-  }
-
-  return `BK-${currentYear}-${maxNumber + 1}`;
+function escapeLike(s) {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
-
-// Khởi chạy đồng bộ ban đầu
-syncInitialData().catch(e => console.error("Sync data error:", e));
 
 module.exports = {
-  BookingDoc,
+  OCCUPYING_STATUSES,
 
-  // 1. Lấy danh sách toàn bộ đơn đặt phòng từ MongoDB
+  // 1. Lấy danh sách đơn đặt phòng (có lọc)
   async getAll(filters = {}) {
-    await connectDB();
-    const query = {};
+    const where = [];
+    const values = [];
 
-    // Lọc theo userId
     if (filters.userId) {
-      query.userId = String(filters.userId).trim();
+      values.push(String(filters.userId).trim());
+      where.push(`user_id = $${values.length}`);
     }
 
-    // Lọc theo trạng thái (hỗ trợ cả tiếng Việt và "pending")
     if (filters.status && filters.status !== "Tất cả" && filters.status !== "ALL") {
       const st = String(filters.status).trim();
       if (st.toLowerCase() === "pending") {
-        query.status = { $in: ["Chờ xác nhận", "pending", "Pending"] };
+        where.push("status = 'Chờ xác nhận'");
       } else {
-        query.status = new RegExp(`^${st}$`, "i");
+        values.push(st);
+        where.push(`lower(status) = lower($${values.length})`);
       }
     }
 
-    // Tìm kiếm tổng quát theo mã đơn, tên khách, sđt, email, tên phòng
     if (filters.search) {
-      const q = String(filters.search).trim();
-      const regex = new RegExp(q, "i");
-      query.$or = [
-        { bookingCode: regex },
-        { id: regex },
-        { customerName: regex },
-        { phone: regex },
-        { email: regex },
-        { roomName: regex }
-      ];
+      values.push(`%${escapeLike(String(filters.search).trim())}%`);
+      const p = `$${values.length}`;
+      where.push(
+        `(booking_code ILIKE ${p} OR customer_name ILIKE ${p} OR phone ILIKE ${p} OR email ILIKE ${p} OR room_name ILIKE ${p})`
+      );
     }
 
-    const bookings = await BookingDoc.find(query)
-      .sort({ createdAt: -1 })
-      .lean();
-
-    return bookings.map(b => ({
-      ...b,
-      id: b.id || b.bookingCode || String(b._id)
-    }));
+    const sql = `SELECT ${SELECT_COLUMNS} FROM bookings
+                 ${where.length ? "WHERE " + where.join(" AND ") : ""}
+                 ORDER BY created_at DESC, booking_code DESC`;
+    const { rows } = await query(sql, values);
+    return rows.map(mapBooking);
   },
 
-  // 2. Tìm đơn đặt phòng theo ID hoặc Mã đơn từ MongoDB
+  // 2. Tìm đơn theo mã đơn
   async getById(id) {
     if (!id) return null;
-    await connectDB();
-    const cleanId = String(id).trim();
-
-    const query = {
-      $or: [
-        { id: cleanId },
-        { bookingCode: cleanId }
-      ]
-    };
-
-    if (mongoose.Types.ObjectId.isValid(cleanId)) {
-      query.$or.push({ _id: cleanId });
-    }
-
-    const doc = await BookingDoc.findOne(query).lean();
-    if (!doc) return null;
-
-    return {
-      ...doc,
-      id: doc.id || doc.bookingCode || String(doc._id)
-    };
+    const { rows } = await query(
+      `SELECT ${SELECT_COLUMNS} FROM bookings WHERE booking_code = $1`,
+      [String(id).trim()]
+    );
+    return mapBooking(rows[0]);
   },
 
-  // 3. Tạo đơn đặt phòng mới LƯU TRỰC TIẾP VÀO MONGODB
+  // 3. Tạo đơn đặt phòng mới trong transaction, khóa phòng để chống đặt trùng
   async create(bookingData) {
-    await connectDB();
+    const checkIn = normalizeDate(bookingData.checkIn);
+    const checkOut = normalizeDate(bookingData.checkOut);
+    if (!checkIn || !checkOut) {
+      const err = new Error("Thiếu ngày nhận hoặc ngày trả phòng");
+      err.status = 400;
+      throw err;
+    }
 
-    // Sinh mã đặt phòng duy nhất dạng BK-YYYY-XXXX
-    const code = await generateUniqueBookingCode();
+    const diffDays = diffNights(checkIn, checkOut);
+    if (diffDays < 1) {
+      const err = new Error("Ngày trả phòng phải sau ngày nhận phòng ít nhất 1 đêm");
+      err.status = 400;
+      throw err;
+    }
 
-    const checkIn = new Date(bookingData.checkIn);
-    const checkOut = new Date(bookingData.checkOut);
-    const diffTime = Math.abs(checkOut - checkIn);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
-
-    const nights = bookingData.nights || diffDays;
+    const nights = Number(bookingData.nights) >= 1 ? Number(bookingData.nights) : diffDays;
     const roomPrice = Number(bookingData.roomPrice) || 0;
-    const totalPrice = bookingData.totalPrice ? Number(bookingData.totalPrice) : (nights * roomPrice);
+    const totalPrice = bookingData.totalPrice ? Number(bookingData.totalPrice) : nights * roomPrice;
 
     // Xác định userId nếu có tài khoản liên kết
     let userId = bookingData.userId || null;
+    if (userId) {
+      const existing = await User.findById(userId);
+      userId = existing ? existing.id : null;
+    }
     if (!userId && (bookingData.email || bookingData.phone)) {
       try {
         const user = (await User.findByEmail(bookingData.email)) || (await User.findByPhone(bookingData.phone));
-        if (user) {
-          userId = user.id;
-        }
+        if (user) userId = user.id;
       } catch (e) {
         console.error("Lỗi tìm kiếm user theo thông tin booking:", e.message);
       }
     }
 
-    // Chuẩn hóa phương thức thanh toán
     const paymentMethod = bookingData.paymentMethod || "cash";
+    const paymentStatus =
+      bookingData.paymentStatus ||
+      (paymentMethod === "bank_transfer" ? "Chờ xác nhận chuyển khoản" : "Chưa thanh toán");
 
-    // Phân biệt trạng thái thanh toán mặc định
-    let paymentStatus = bookingData.paymentStatus;
-    if (!paymentStatus) {
-      if (paymentMethod === "bank_transfer") {
-        paymentStatus = "Chờ xác nhận chuyển khoản";
-      } else {
-        paymentStatus = "Chưa thanh toán";
+    return withTransaction(async (client) => {
+      // Khóa dòng phòng: các đơn đặt cùng một phòng được xử lý tuần tự
+      const roomRes = await client.query(
+        `SELECT id, room_code, name, type FROM rooms
+          WHERE id = $1 OR room_code = $1
+          ORDER BY (id = $1) DESC LIMIT 1 FOR UPDATE`,
+        [String(bookingData.roomId).trim()]
+      );
+      const room = roomRes.rows[0] || null;
+
+      if (room) {
+        const conflict = await findConflict(client, room.id, checkIn, checkOut, null);
+        if (conflict) throw createConflictError(conflict, bookingData.roomName || room.name);
       }
-    }
 
-    // Trạng thái đơn đặt phòng luôn khởi tạo ở trạng thái Chờ xác nhận
-    const status = bookingData.status || "Chờ xác nhận";
+      // Khóa advisory để sinh mã đơn tuần tự, không bao giờ trùng mã
+      await client.query("SELECT pg_advisory_xact_lock(7001)");
+      const code = await generateBookingCode(client);
 
-    const newBooking = {
-      id: code,
-      bookingCode: code,
-      userId: userId,
-      customerName: String(bookingData.customerName).trim(),
-      phone: String(bookingData.phone).trim(),
-      email: String(bookingData.email).trim(),
-      roomId: String(bookingData.roomId).trim(),
-      roomName: bookingData.roomName || "Phòng khách sạn",
-      roomType: bookingData.roomType || "Phòng tiêu chuẩn",
-      checkIn: bookingData.checkIn,
-      checkOut: bookingData.checkOut,
-      nights: nights,
-      guests: Number(bookingData.guests) || 1,
-      roomPrice: roomPrice,
-      totalPrice: totalPrice,
-      paymentMethod: paymentMethod,
-      paymentStatus: paymentStatus,
-      status: status,
-      checkInStatus: bookingData.checkInStatus || "Chưa nhận phòng",
-      checkOutStatus: bookingData.checkOutStatus || "Chưa trả phòng",
-      specialRequests: bookingData.specialRequests || "",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+      const { rows } = await client.query(
+        `INSERT INTO bookings (
+           booking_code, user_id, customer_name, phone, email, room_id, room_code, room_name, room_type,
+           check_in, check_out, nights, guests, room_price, total_price, payment_method, payment_status,
+           status, check_in_status, check_out_status, special_requests
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+         RETURNING ${SELECT_COLUMNS}`,
+        [
+          code,
+          userId,
+          String(bookingData.customerName).trim(),
+          String(bookingData.phone).trim(),
+          String(bookingData.email).trim(),
+          room ? room.id : null,
+          room ? room.room_code : String(bookingData.roomId).trim(),
+          bookingData.roomName || (room && room.name) || "Phòng khách sạn",
+          bookingData.roomType || (room && room.type) || "Phòng tiêu chuẩn",
+          checkIn,
+          checkOut,
+          nights,
+          Number(bookingData.guests) || 1,
+          roomPrice,
+          totalPrice,
+          paymentMethod,
+          paymentStatus,
+          bookingData.status || "Chờ xác nhận",
+          bookingData.checkInStatus || "Chưa nhận phòng",
+          bookingData.checkOutStatus || "Chưa trả phòng",
+          bookingData.specialRequests || ""
+        ]
+      );
 
-    // 🚀 LƯU VÀO MONGODB COLLECTION BOOKINGS
-    const savedDoc = await BookingDoc.create(newBooking);
-    const plainBooking = savedDoc.toObject ? savedDoc.toObject() : savedDoc;
-    plainBooking.id = plainBooking.id || plainBooking.bookingCode;
-
-    // Đồng bộ vào tệp JSON sao lưu
-    readBackupBookings().then(async (list) => {
-      list.unshift(plainBooking);
-      await writeBackupBookings(list);
-    }).catch(e => console.error("Lỗi đồng bộ file sao lưu:", e.message));
-
-    console.log(`✅ [MongoDB] Đã lưu thành công đơn đặt phòng mới vào MongoDB: ${plainBooking.bookingCode} (Khách: ${plainBooking.customerName})`);
-    return plainBooking;
+      const created = mapBooking(rows[0]);
+      console.log(`✅ [PostgreSQL] Đã lưu đơn đặt phòng mới: ${created.bookingCode} (Khách: ${created.customerName})`);
+      return created;
+    });
   },
 
-  // 4. Cập nhật thông tin đơn đặt phòng trên MongoDB
+  // 4. Cập nhật thông tin đơn đặt phòng
   async update(id, updateData) {
     if (!id) return null;
-    await connectDB();
-    const cleanId = String(id).trim();
-
-    const query = {
-      $or: [
-        { id: cleanId },
-        { bookingCode: cleanId }
-      ]
-    };
-
-    if (mongoose.Types.ObjectId.isValid(cleanId)) {
-      query.$or.push({ _id: cleanId });
-    }
-
-    const safeUpdate = { ...updateData };
-    delete safeUpdate._id;
-    delete safeUpdate.id;
-    delete safeUpdate.bookingCode;
-    safeUpdate.updatedAt = new Date().toISOString();
-
-    const updatedDoc = await BookingDoc.findOneAndUpdate(
-      query,
-      { $set: safeUpdate },
-      { new: true, runValidators: true }
-    ).lean();
-
-    if (!updatedDoc) return null;
-
-    const plain = {
-      ...updatedDoc,
-      id: updatedDoc.id || updatedDoc.bookingCode
-    };
-
-    // Đồng bộ vào tệp JSON sao lưu
-    readBackupBookings().then(async (list) => {
-      const idx = list.findIndex(b => (b.id && b.id === plain.id) || (b.bookingCode && b.bookingCode === plain.bookingCode));
-      if (idx !== -1) {
-        list[idx] = { ...list[idx], ...plain };
-      } else {
-        list.unshift(plain);
-      }
-      await writeBackupBookings(list);
-    }).catch(e => console.error("Lỗi đồng bộ file sao lưu khi update:", e.message));
-
-    return plain;
+    return runUpdate({ query }, id, updateData || {});
   },
 
-  // 5. Xóa đơn đặt phòng khỏi MongoDB
+  // 4b. Xác nhận đơn: kiểm tra trùng lịch + cập nhật trong CÙNG một transaction (có khóa phòng)
+  // Trả về { notFound: true } | { conflict: {...} } | { booking }
+  async confirm(id, updateData) {
+    const code = String(id).trim();
+    return withTransaction(async (client) => {
+      const pre = await client.query("SELECT room_id FROM bookings WHERE booking_code = $1", [code]);
+      if (!pre.rows[0]) return { notFound: true };
+
+      const roomId = pre.rows[0].room_id;
+      if (roomId) await client.query("SELECT 1 FROM rooms WHERE id = $1 FOR UPDATE", [roomId]);
+
+      const cur = await client.query(
+        "SELECT check_in, check_out, room_name FROM bookings WHERE booking_code = $1 FOR UPDATE",
+        [code]
+      );
+      if (!cur.rows[0]) return { notFound: true };
+
+      if (roomId) {
+        const conflict = await findConflict(client, roomId, cur.rows[0].check_in, cur.rows[0].check_out, code);
+        if (conflict) {
+          return {
+            conflict: {
+              bookingCode: conflict.booking_code,
+              customerName: conflict.customer_name,
+              checkIn: conflict.check_in,
+              checkOut: conflict.check_out
+            }
+          };
+        }
+      }
+
+      const booking = await runUpdate(client, code, updateData);
+      return { booking };
+    });
+  },
+
+  // 5. Xóa đơn đặt phòng
   async delete(id) {
     if (!id) return false;
-    await connectDB();
-    const cleanId = String(id).trim();
-
-    const query = {
-      $or: [
-        { id: cleanId },
-        { bookingCode: cleanId }
-      ]
-    };
-
-    if (mongoose.Types.ObjectId.isValid(cleanId)) {
-      query.$or.push({ _id: cleanId });
-    }
-
-    const result = await BookingDoc.findOneAndDelete(query);
-    if (result) {
-      readBackupBookings().then(async (list) => {
-        const filtered = list.filter(b => b.id !== cleanId && b.bookingCode !== cleanId);
-        await writeBackupBookings(filtered);
-      }).catch(e => console.error("Lỗi đồng bộ file sao lưu khi delete:", e.message));
-      return true;
-    }
-    return false;
+    const { rowCount } = await query("DELETE FROM bookings WHERE booking_code = $1", [String(id).trim()]);
+    return rowCount > 0;
   }
 };

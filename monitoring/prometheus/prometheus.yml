@@ -25,8 +25,8 @@ scrape_configs:
     static_configs:
       - targets: ['nginx-exporter:9113']
 
-  # 3. Giám sát Database MongoDB (Trạng thái, Kết nối, Operations rate, Memory)
-  - job_name: 'mongodb'
+  # 3. Giám sát Database PostgreSQL (Trạng thái, Kết nối, Giao dịch, Dung lượng)
+  - job_name: 'postgres'
     scrape_interval: 5s
     static_configs:
-      - targets: ['mongodb-exporter:9216']
+      - targets: ['postgres-exporter:9187']

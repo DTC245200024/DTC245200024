@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Hotel PostgreSQL",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "hotel_booking_db",
+      "Username": "hotel_admin",
+      "SSLMode": "prefer",
+      "Comment": "Mật khẩu = biến DB_PASSWORD trong file .env (pgAdmin sẽ hỏi khi kết nối)."
+    }
+  }
+}

@@ -19,3 +19,7 @@ nginx/ssl/
 *.key
 *.crt
 *.pem
+
+# Dữ liệu export từ hệ thống cũ (chứa mật khẩu đã băm/dữ liệu khách hàng)
+migration/export/
+migration/backup/

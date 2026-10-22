@@ -1,79 +1,32 @@
-const mongoose = require("mongoose");
-const fs = require("fs").promises;
-const fsSync = require("fs");
-const path = require("path");
-const { connectDB } = require("../config/db");
+const { query } = require("../config/db");
 
-const DATA_DIR = path.join(__dirname, "../data");
-const DATA_FILE = path.join(DATA_DIR, "rooms.json");
+const COLUMNS =
+  "id, room_code, name, type, price, max_guests, capacity, status, floor, size, bed, view_type, image, description, amenities";
 
-const roomSchema = new mongoose.Schema(
-  {
-    id: { type: String, required: true, unique: true, index: true },
-    roomCode: { type: String, required: true, index: true },
-    name: { type: String, required: true },
-    type: { type: String, required: true },
-    price: { type: Number, required: true },
-    maxGuests: { type: Number, default: 2 },
-    capacity: { type: Number, default: 2 },
-    status: { type: String, default: "Trống" },
-    floor: { type: Number, default: 1 },
-    size: { type: String, default: "30m²" },
-    bed: { type: String, default: "1 Giường đôi" },
-    view: { type: String, default: "Hướng phố" },
-    image: { type: String, default: "" },
-    description: { type: String, default: "" },
-    amenities: { type: [String], default: [] }
-  },
-  {
-    collection: "rooms",
-    timestamps: false,
-    versionKey: false
-  }
-);
+const DEFAULT_IMAGE =
+  "https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=1000&q=80";
 
-const RoomDoc = mongoose.models.Room || mongoose.model("Room", roomSchema);
-
-async function readRoomsFromFile() {
-  try {
-    if (fsSync.existsSync(DATA_FILE)) {
-      const data = await fs.readFile(DATA_FILE, "utf-8");
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    console.error("Lỗi đọc backup rooms.json:", error.message);
-  }
-  return [];
+// Chuyển hàng PostgreSQL sang đối tượng có cùng cấu trúc với API cũ
+function mapRoom(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    roomCode: row.room_code,
+    name: row.name,
+    type: row.type,
+    price: row.price,
+    maxGuests: row.max_guests,
+    capacity: row.capacity === null ? row.max_guests : row.capacity,
+    status: row.status,
+    floor: row.floor,
+    size: row.size,
+    bed: row.bed,
+    view: row.view_type,
+    image: row.image,
+    description: row.description,
+    amenities: row.amenities || []
+  };
 }
-
-async function writeRoomsToFile(rooms) {
-  try {
-    if (!fsSync.existsSync(DATA_DIR)) {
-      fsSync.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    await fs.writeFile(DATA_FILE, JSON.stringify(rooms, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Lỗi ghi backup rooms.json:", error.message);
-  }
-}
-
-// Đồng bộ ban đầu nếu MongoDB chưa có rooms
-async function syncInitialRooms() {
-  try {
-    await connectDB();
-    const count = await RoomDoc.countDocuments();
-    if (count === 0) {
-      const fileRooms = await readRoomsFromFile();
-      if (fileRooms.length > 0) {
-        await RoomDoc.insertMany(fileRooms);
-        console.log(`🍃 [MongoDB] Đã nạp ${fileRooms.length} phòng ban đầu vào MongoDB.`);
-      }
-    }
-  } catch (e) {
-    console.error("Lỗi đồng bộ rooms vào MongoDB:", e.message);
-  }
-}
-syncInitialRooms().catch(e => console.error(e));
 
 function getCanonicalRoomType(rawType) {
   if (!rawType) return "";
@@ -92,178 +45,142 @@ function getCanonicalRoomType(rawType) {
   return s.toUpperCase();
 }
 
-module.exports = {
-  RoomDoc,
+function parseAmenities(value, fallback) {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string" && value.trim()) return value.split(",").map((s) => s.trim()).filter(Boolean);
+  return fallback;
+}
 
+module.exports = {
   // Lấy danh sách phòng có hỗ trợ bộ lọc
   async getAll(filters = {}) {
-    let rooms = [];
-    try {
-      await connectDB();
-      rooms = await RoomDoc.find().lean();
-      if (!rooms || rooms.length === 0) {
-        rooms = await readRoomsFromFile();
-      }
-    } catch (e) {
-      console.warn("MongoDB không khả dụng khi lấy rooms, dùng file:", e.message);
-      rooms = await readRoomsFromFile();
-    }
+    const { rows } = await query(`SELECT ${COLUMNS} FROM rooms ORDER BY seq`);
+    let rooms = rows.map(mapRoom);
 
     if (filters.type && filters.type !== "Tất cả" && filters.type !== "ALL") {
       const canonicalFilter = getCanonicalRoomType(filters.type);
-      rooms = rooms.filter(r => {
-        const raw = r.type || r.roomType || r.category || "";
-        return getCanonicalRoomType(raw) === canonicalFilter;
-      });
+      rooms = rooms.filter((r) => getCanonicalRoomType(r.type) === canonicalFilter);
     }
 
     if (filters.status && filters.status !== "Tất cả" && filters.status !== "ALL") {
-      rooms = rooms.filter(r => (r.status || "").toLowerCase() === filters.status.toLowerCase());
+      rooms = rooms.filter((r) => (r.status || "").toLowerCase() === filters.status.toLowerCase());
     }
 
     if (filters.minPrice) {
-      rooms = rooms.filter(r => r.price >= Number(filters.minPrice));
+      rooms = rooms.filter((r) => r.price >= Number(filters.minPrice));
     }
 
     if (filters.maxPrice) {
-      rooms = rooms.filter(r => r.price <= Number(filters.maxPrice));
+      rooms = rooms.filter((r) => r.price <= Number(filters.maxPrice));
     }
 
     if (filters.guests) {
-      rooms = rooms.filter(r => (r.maxGuests || r.capacity || 2) >= Number(filters.guests));
+      rooms = rooms.filter((r) => (r.maxGuests || r.capacity || 2) >= Number(filters.guests));
     }
 
     if (filters.search) {
       const q = filters.search.toLowerCase().trim();
-      rooms = rooms.filter(r => 
-        (r.name && r.name.toLowerCase().includes(q)) || 
-        (r.roomCode && r.roomCode.toLowerCase().includes(q)) || 
-        (r.type && r.type.toLowerCase().includes(q)) ||
-        (r.description && r.description.toLowerCase().includes(q))
+      rooms = rooms.filter(
+        (r) =>
+          (r.name && r.name.toLowerCase().includes(q)) ||
+          (r.roomCode && r.roomCode.toLowerCase().includes(q)) ||
+          (r.type && r.type.toLowerCase().includes(q)) ||
+          (r.description && r.description.toLowerCase().includes(q))
       );
     }
 
-    return rooms.map(r => ({ ...r, id: r.id || r.roomCode }));
+    return rooms;
   },
 
   async getById(id) {
     if (!id) return null;
-    const cleanId = String(id).trim();
-
-    try {
-      await connectDB();
-      const doc = await RoomDoc.findOne({
-        $or: [{ id: cleanId }, { roomCode: cleanId }]
-      }).lean();
-      if (doc) return { ...doc, id: doc.id || doc.roomCode };
-    } catch (e) {
-      console.warn("Lỗi MongoDB khi getById room, dùng file:", e.message);
-    }
-
-    const rooms = await readRoomsFromFile();
-    return rooms.find(r => r.id === cleanId || r.roomCode === cleanId) || null;
+    const { rows } = await query(
+      `SELECT ${COLUMNS} FROM rooms WHERE id = $1 OR room_code = $1 ORDER BY (id = $1) DESC LIMIT 1`,
+      [String(id).trim()]
+    );
+    return mapRoom(rows[0]);
   },
 
   async create(roomData) {
-    await connectDB();
-    let existingRooms = [];
-    try {
-      existingRooms = await RoomDoc.find().lean();
-    } catch (e) {
-      existingRooms = await readRoomsFromFile();
+    let newId = roomData.id || roomData.roomCode;
+    if (!newId) {
+      const { rows } = await query("SELECT nextval('room_id_seq') AS n");
+      newId = `RM-${rows[0].n}`;
     }
 
-    const newId = roomData.id || roomData.roomCode || "RM-" + (100 + existingRooms.length + 1);
-
-    const newRoom = {
-      id: newId,
-      roomCode: roomData.roomCode || newId,
-      name: roomData.name || "Phòng nghỉ mới",
-      type: roomData.type || "Phòng đơn",
-      price: Number(roomData.price) || 500000,
-      maxGuests: Number(roomData.maxGuests) || 2,
-      capacity: Number(roomData.maxGuests) || 2,
-      status: roomData.status || "Trống",
-      floor: Number(roomData.floor) || 1,
-      size: roomData.size || "30m²",
-      bed: roomData.bed || "1 Giường đôi",
-      view: roomData.view || "Hướng thành phố",
-      image: roomData.image || "https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=1000&q=80",
-      description: roomData.description || "",
-      amenities: Array.isArray(roomData.amenities) 
-        ? roomData.amenities 
-        : (roomData.amenities ? roomData.amenities.split(",").map(s => s.trim()) : ["Wifi miễn phí", "Điều hòa"])
-    };
-
-    try {
-      const created = await RoomDoc.create(newRoom);
-      const resObj = created.toObject ? created.toObject() : created;
-      readRoomsFromFile().then(async list => {
-        list.push(resObj);
-        await writeRoomsToFile(list);
-      });
-      return resObj;
-    } catch (e) {
-      console.error("Lỗi MongoDB khi tạo room:", e.message);
-      throw e;
-    }
+    const maxGuests = Number(roomData.maxGuests) || 2;
+    const { rows } = await query(
+      `INSERT INTO rooms (id, room_code, name, type, price, max_guests, capacity, status, floor,
+                          size, bed, view_type, image, description, amenities)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       RETURNING ${COLUMNS}`,
+      [
+        newId,
+        roomData.roomCode || newId,
+        roomData.name || "Phòng nghỉ mới",
+        roomData.type || "Phòng đơn",
+        Number(roomData.price) || 500000,
+        maxGuests,
+        maxGuests,
+        roomData.status || "Trống",
+        Number(roomData.floor) || 1,
+        roomData.size || "30m²",
+        roomData.bed || "1 Giường đôi",
+        roomData.view || "Hướng thành phố",
+        roomData.image || DEFAULT_IMAGE,
+        roomData.description || "",
+        parseAmenities(roomData.amenities, ["Wifi miễn phí", "Điều hòa"])
+      ]
+    );
+    return mapRoom(rows[0]);
   },
 
   async update(id, updateData) {
     if (!id) return null;
-    const cleanId = String(id).trim();
-    await connectDB();
 
-    const safeUpdate = { ...updateData };
-    delete safeUpdate._id;
-    delete safeUpdate.id;
-    if (safeUpdate.price !== undefined) safeUpdate.price = Number(safeUpdate.price);
-    if (safeUpdate.maxGuests !== undefined) safeUpdate.maxGuests = Number(safeUpdate.maxGuests);
+    const fieldMap = {
+      roomCode: ["room_code", (v) => String(v)],
+      name: ["name", (v) => String(v)],
+      type: ["type", (v) => String(v)],
+      price: ["price", (v) => Number(v)],
+      maxGuests: ["max_guests", (v) => Number(v)],
+      capacity: ["capacity", (v) => Number(v)],
+      status: ["status", (v) => String(v)],
+      floor: ["floor", (v) => Number(v)],
+      size: ["size", (v) => String(v)],
+      bed: ["bed", (v) => String(v)],
+      view: ["view_type", (v) => String(v)],
+      image: ["image", (v) => String(v)],
+      description: ["description", (v) => String(v)],
+      amenities: ["amenities", (v) => parseAmenities(v, [])]
+    };
 
-    try {
-      const updated = await RoomDoc.findOneAndUpdate(
-        { $or: [{ id: cleanId }, { roomCode: cleanId }] },
-        { $set: safeUpdate },
-        { new: true }
-      ).lean();
-
-      if (updated) {
-        readRoomsFromFile().then(async list => {
-          const idx = list.findIndex(r => r.id === cleanId || r.roomCode === cleanId);
-          if (idx !== -1) {
-            list[idx] = { ...list[idx], ...updated };
-            await writeRoomsToFile(list);
-          }
-        });
-        return { ...updated, id: updated.id || updated.roomCode };
-      }
-    } catch (e) {
-      console.error("Lỗi MongoDB khi update room:", e.message);
+    const sets = [];
+    const values = [];
+    for (const [key, [column, convert]] of Object.entries(fieldMap)) {
+      if (updateData[key] === undefined || updateData[key] === null) continue;
+      values.push(convert(updateData[key]));
+      sets.push(`${column} = $${values.length}`);
     }
 
-    return null;
+    if (sets.length === 0) {
+      return this.getById(id);
+    }
+
+    values.push(String(id).trim());
+    const { rows } = await query(
+      `UPDATE rooms SET ${sets.join(", ")}
+        WHERE id = $${values.length} OR room_code = $${values.length}
+        RETURNING ${COLUMNS}`,
+      values
+    );
+    return mapRoom(rows[0]);
   },
 
   async delete(id) {
     if (!id) return false;
-    const cleanId = String(id).trim();
-    await connectDB();
-
-    try {
-      const res = await RoomDoc.findOneAndDelete({
-        $or: [{ id: cleanId }, { roomCode: cleanId }]
-      });
-      if (res) {
-        readRoomsFromFile().then(async list => {
-          const filtered = list.filter(r => r.id !== cleanId && r.roomCode !== cleanId);
-          await writeRoomsToFile(filtered);
-        });
-        return true;
-      }
-    } catch (e) {
-      console.error("Lỗi MongoDB khi delete room:", e.message);
-    }
-
-    return false;
+    // Các đơn đặt phòng cũ vẫn được giữ lại (bookings.room_id -> NULL, giữ nguyên room_code/room_name)
+    const { rowCount } = await query("DELETE FROM rooms WHERE id = $1 OR room_code = $1", [String(id).trim()]);
+    return rowCount > 0;
   }
 };
