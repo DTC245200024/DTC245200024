@@ -87,10 +87,7 @@ sudo docker compose ps
 - Cho phép chỉnh sửa và cập nhật họ tên, số điện thoại.
 
 ---
-
 ## 8. Cấu trúc thư mục dự án
-
-```text
 DTC245200024/
 ├── backend/
 │   ├── Dockerfile
@@ -98,10 +95,12 @@ DTC245200024/
 │   └── uploads/
 ├── frontend/
 │   └── Dockerfile
-├── mongo-init/
 ├── nginx/
 │   ├── Dockerfile
 │   └── nginx.conf
+├── database/
+│   └── init/
+│       └── các tệp SQL khởi tạo PostgreSQL
 ├── monitoring/
 │   ├── prometheus/
 │   │   └── prometheus.yml
@@ -116,7 +115,6 @@ DTC245200024/
 ├── .env.example
 ├── .gitignore
 └── README.md
-```
 
 ## 👥 TÀI KHOẢN TRẢI NGHIỆM & HƯỚNG DẪN ĐĂNG NHẬP
 
