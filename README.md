@@ -88,7 +88,7 @@ sudo docker compose ps
 
 ---
 ## 8. Cấu trúc thư mục dự án
-
+```
 DTC245200024/
 ├── backend/
 │   ├── Dockerfile
@@ -117,7 +117,7 @@ DTC245200024/
 ├── .env.example
 ├── .gitignore
 └── README.md
-
+```
 ## 👥 TÀI KHOẢN TRẢI NGHIỆM & HƯỚNG DẪN ĐĂNG NHẬP
 
 Hệ thống hỗ trợ 2 nhóm vai trò người dùng chính:
