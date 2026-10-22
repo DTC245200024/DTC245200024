@@ -88,6 +88,7 @@ sudo docker compose ps
 
 ---
 ## 8. Cấu trúc thư mục dự án
+
 DTC245200024/
 ├── backend/
 │   ├── Dockerfile
@@ -95,12 +96,13 @@ DTC245200024/
 │   └── uploads/
 ├── frontend/
 │   └── Dockerfile
+├── database/
+│   ├── init/
+│   └── pgadmin/
+│       └── servers.json
 ├── nginx/
 │   ├── Dockerfile
 │   └── nginx.conf
-├── database/
-│   └── init/
-│       └── các tệp SQL khởi tạo PostgreSQL
 ├── monitoring/
 │   ├── prometheus/
 │   │   └── prometheus.yml
