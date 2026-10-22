@@ -222,6 +222,12 @@ async function autoSeedDatabase() {
         ]
       );
       console.log(`✅ [Seed] Đã tạo tài khoản Quản trị viên thành công!`);
+    } else {
+      // Bảo đảm mật khẩu của Admin luôn được đồng bộ theo ADMIN_PASSWORD
+      await query(
+        "UPDATE users SET password_hash = $1 WHERE email = $2",
+        [hashPassword(adminPassword), adminEmail]
+      );
     }
 
     // 3. Khởi tạo các tài khoản mẫu từ users.json nếu có
