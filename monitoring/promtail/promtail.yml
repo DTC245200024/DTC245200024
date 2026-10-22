@@ -43,6 +43,16 @@ scrape_configs:
       # Gán nhãn service_name tương thích
       - source_labels: ['service']
         target_label: 'service_name'
+      # Gán nhãn job="webapp" cho các thành phần webapp (backend, nginx, frontend)
+      # để hỗ trợ trực tiếp các câu truy vấn {job="webapp"}
+      - source_labels: ['service']
+        regex: '(backend|nginx|frontend)'
+        target_label: 'job'
+        replacement: 'webapp'
+      # Với các container khác, gán job bằng tên service (postgres, loki, promtail, prometheus,...)
+      - source_labels: ['job', 'service']
+        regex: ';(.*)'
+        target_label: 'job'
       # Đường dẫn file log JSON của container
       - source_labels: ['__meta_docker_container_log_path']
         target_label: '__path__'

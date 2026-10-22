@@ -4,16 +4,33 @@
 Hệ thống quản lý và thu thập log tập trung sử dụng **Grafana Loki** kết hợp cùng **Promtail** để thu thập tự động toàn bộ log từ các Docker container của dự án (`hotel_nginx`, `hotel_backend`, `hotel_postgres`, `hotel_pgadmin`, `hotel_frontend`, `hotel_prometheus`, `hotel_grafana`, `hotel_cadvisor`,...).
 
 Các nhãn (labels) thực tế được cấu hình tự động bởi Promtail:
+- `job`: Nhóm ứng dụng chính (`webapp` cho `hotel_backend`, `hotel_nginx`, `hotel_frontend`; hoặc tên service cho các thành phần khác).
 - `container`: Tên đầy đủ của container Docker (ví dụ: `hotel_backend`, `hotel_nginx`, `hotel_postgres`, `hotel_prometheus`,...).
-- `service`: Tên dịch vụ chuẩn hóa (ví dụ: `backend`, `nginx`, `postgres`, `frontend`, `loki`,...).
+- `service` / `service_name`: Tên dịch vụ chuẩn hóa (ví dụ: `backend`, `nginx`, `postgres`, `frontend`, `loki`,...).
 - `compose_service`: Tên service khai báo trong Docker Compose (`backend`, `nginx`, `postgres`,...).
 - `stream`: Luồng đầu ra của tiến trình (`stdout` hoặc `stderr`).
 
 ---
 
-## 🔍 DANH SÁCH 3 TRUY VẤN LOGQL CHÍNH (THEO YÊU CẦU ĐỀ BÀI)
+## 🔍 DANH SÁCH CÁC TRUY VẤN LOGQL CHÍNH (THEO YÊU CẦU ĐỀ BÀI)
 
-### 1. Xem log của toàn bộ container được thu thập
+### 1. Tìm các lần đăng nhập thất bại (Security / Auth Failure)
+- **Mục đích**: Giám sát và phát hiện ngay lập tức các sự cố đăng nhập sai mật khẩu, tài khoản bị tạm khóa, hoặc hành vi dò mật khẩu (brute-force) vào hệ thống đặt phòng.
+- **Cú pháp LogQL chuẩn**:
+  ```logql
+  {job="webapp"} |= "LOGIN_FAILED"
+  ```
+  *Hoặc lọc chính xác theo container backend:*
+  ```logql
+  {container="hotel_backend"} |= "LOGIN_FAILED"
+  ```
+- **Giải thích cú pháp**:
+  - `{job="webapp"}`: Chọn luồng log của toàn bộ ứng dụng web (Node.js Backend & Nginx).
+  - `|= "LOGIN_FAILED"`: Bộ lọc dòng chứa chuỗi sự kiện đăng nhập thất bại được backend ghi nhận an toàn (kèm identifier, IP client; tuyệt đối không log mật khẩu).
+
+---
+
+### 2. Xem log của toàn bộ container được thu thập
 - **Mục đích**: Theo dõi dòng sự kiện thời gian thực (live tail) của tất cả các dịch vụ đang hoạt động trong hệ sinh thái khách sạn, giúp có cái nhìn tổng quan về trạng thái vận hành của toàn bộ hệ thống.
 - **Cú pháp LogQL**:
   ```logql
@@ -22,6 +39,10 @@ Các nhãn (labels) thực tế được cấu hình tự động bởi Promtail
   *Hoặc thu hẹp trong phạm vi các container của dự án khách sạn:*
   ```logql
   {container=~"hotel_.*"}
+  ```
+  *Hoặc lọc ứng dụng web:*
+  ```logql
+  {job="webapp"}
   ```
 - **Cách sử dụng trên Grafana**:
   1. Mở Grafana tại [http://localhost:3000](http://localhost:3000).

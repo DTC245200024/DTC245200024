@@ -103,9 +103,11 @@ module.exports = {
   async login(req, res) {
     try {
       const { identifier, email, phone, password } = req.body;
-      const loginKey = identifier || email || phone;
+      const loginKey = (identifier || email || phone || "").trim();
+      const clientIp = req.ip || req.connection?.remoteAddress || "unknown";
 
       if (!loginKey || !password) {
+        console.warn(`[AUTH] LOGIN_FAILED: Missing identifier or password (IP: ${clientIp})`);
         return res.status(400).json({
           success: false,
           message: "Vui lòng nhập Email hoặc Số điện thoại cùng Mật khẩu"
@@ -118,6 +120,7 @@ module.exports = {
       }
 
       if (!user) {
+        console.warn(`[AUTH] LOGIN_FAILED: Account not found for identifier="${loginKey}" (IP: ${clientIp})`);
         return res.status(401).json({
           success: false,
           message: "Tài khoản không tồn tại. Vui lòng kiểm tra lại email hoặc số điện thoại."
@@ -125,6 +128,7 @@ module.exports = {
       }
 
       if (user.status === "locked") {
+        console.warn(`[AUTH] LOGIN_FAILED: Account is locked for user_id=${user.id}, email="${user.email}" (IP: ${clientIp})`);
         return res.status(403).json({
           success: false,
           message: "Tài khoản của bạn đã bị tạm khóa. Vui lòng liên hệ Quản trị viên hệ thống."
@@ -135,6 +139,7 @@ module.exports = {
       const isPasswordValid = User.comparePassword(password, user.password);
 
       if (!isPasswordValid) {
+        console.warn(`[AUTH] LOGIN_FAILED: Invalid password for user_id=${user.id}, email="${user.email}" (IP: ${clientIp})`);
         return res.status(401).json({
           success: false,
           message: "Mật khẩu không chính xác. Vui lòng thử lại."
@@ -152,6 +157,8 @@ module.exports = {
       }
 
       const { password: _, ...userSafe } = user;
+
+      console.info(`[AUTH] LOGIN_SUCCESS: user_id=${user.id}, email="${user.email}", role="${user.role}" (IP: ${clientIp})`);
 
       res.json({
         success: true,
