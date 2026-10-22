@@ -1,16 +1,11 @@
 # 🏨 HỆ THỐNG ĐẶT PHÒNG KHÁCH SẠN (ĐỀ 6) - CẬP NHẬT AUTH & ĐẶT PHÒNG
 
-Hệ thống Website Đặt phòng Khách sạn hoàn chỉnh Full Stack (**Frontend React** + **Backend Node.js Express REST API**).
 Tên đề tài: Hệ thống đặt phòng khách sạn.
-
-
-
+sinh viên thực hiện: Nguyễn THuỳ Chang
 Mã số sinh viên: DTC245200024.
-
-
-
-Mô tả: Xây dựng và triển khai website đặt phòng khách sạn bằng Docker Compose, tích hợp Nginx Reverse Proxy, cơ sở dữ liệu, Prometheus, Grafana, Loki và Promtail.
-
+lớp: CNTTK23G
+Mail: DTC245200024@ictu.edu.vn
+Mô tả: Mô tả đề tài: Xây dựng và triển khai hệ thống website đặt phòng khách sạn bằng React và Node.js/Express REST API, hỗ trợ xem phòng, đăng ký, đăng nhập, đặt phòng và quản lý thông tin đặt phòng. Hệ thống sử dụng Docker Compose để đóng gói và triển khai các dịch vụ, tích hợp Nginx Reverse Proxy để định tuyến và tăng cường bảo mật, MongoDB để lưu trữ dữ liệu, Prometheus và Grafana để giám sát hệ thống, Loki và Promtail để quản lý log tập trung, đồng thời áp dụng các biện pháp Hardening nhằm tăng cường bảo mật hệ thống.
 
 
 Mục tiêu: Triển khai ứng dụng web, giám sát hệ thống, quản lý log tập trung và tăng cường bảo mật container.
