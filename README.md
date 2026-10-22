@@ -48,8 +48,31 @@ Mục tiêu: Triển khai ứng dụng web, giám sát hệ thống, quản lý 
   + Tự động điền thông tin khách hàng (*Họ tên, Số điện thoại, Email*) từ tài khoản.
   + Tính tổng tiền theo thời gian thực (Đơn giá x Số đêm).
   + Sau khi xác nhận -> Trả về mã đơn `BK-YYYY-XXXX` và lưu vào tài khoản khách hàng.
+  + ## 4. Hướng dẫn chạy đúng thứ tự
 
-### 4. 🧭 Header Điều Hướng (Navbar)
+Triển khai hệ thống đặt phòng khách sạn trên Ubuntu theo các bước:
+
+```bash
+# Bước 1: Sao chép mã nguồn
+git clone https://github.com/DTC245200024/DTC245200024.git
+
+# Bước 2: Vào thư mục dự án
+cd DTC245200024
+
+# Bước 3: Kiểm tra cấu hình
+ls -la
+
+# Bước 4: Kiểm tra Docker Compose
+sudo docker compose config
+
+# Bước 5: Khởi chạy hệ thống
+sudo docker compose up -d --build
+
+# Bước 6: Kiểm tra container
+sudo docker compose ps
+```
+
+### 5. 🧭 Header Điều Hướng (Navbar)
 - **Phía bên trái**: Logo Grand Palace Hotel 5 sao + Menu (*Trang chủ, Danh sách phòng, Dịch vụ, Giới thiệu, Liên hệ*).
 - **Phía bên phải**:
   + **Khi CHƯA đăng nhập**: Hiển thị nút **Đăng nhập** & **Đăng ký**.
@@ -59,12 +82,12 @@ Mục tiêu: Triển khai ứng dụng web, giám sát hệ thống, quản lý 
     * *Quản trị khách sạn (dành cho Admin)*
     * *Đăng xuất*
 
-### 5. 📋 Đơn Đặt Phòng Của Tôi (`/my-bookings`)
+### 6. 📋 Đơn Đặt Phòng Của Tôi (`/my-bookings`)
 - Chỉ hiển thị các đơn đặt phòng thuộc về tài khoản đang đăng nhập.
 - Xem chi tiết từng đơn, mã đặt phòng, phòng đã đặt, ngày check-in, check-out, số khách, tổng tiền, trạng thái (*Chờ xác nhận, Đã xác nhận, Đã nhận phòng, Đã hủy*).
 - Xem lại Phiếu Đặt Phòng (Voucher) và tính năng Hủy đơn trực tiếp.
 
-### 6. 👤 Trang Hồ Sơ Tài Khoản (`/account`)
+### 7. 👤 Trang Hồ Sơ Tài Khoản (`/account`)
 - Xem thông tin cá nhân (*Họ tên, Email, Số điện thoại, Hạng thành viên*).
 - Cho phép chỉnh sửa và cập nhật họ tên, số điện thoại.
 
