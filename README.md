@@ -137,34 +137,6 @@ cp .env.example .env
 > ⚠️ **LƯU Ý BẢO MẬT:**
 > - File `.env` chứa thông tin nhạy cảm (mật khẩu cơ sở dữ liệu, tài khoản quản trị, mật khẩu Grafana) và đã được cấu hình trong `.gitignore` để **không bao giờ commit lên GitHub**.
 > - Tuyệt đối không ghi mật khẩu thật vào `.env.example` hoặc các tài liệu chia sẻ công khai.
-* Hướng dẫn chạy đúng thứ tự 
-# Bước 1: Tải mã nguồn từ GitHub
-git clone https://github.com/DTC245200024/DTC245200024.git
-
-# Bước 2: Di chuyển vào thư mục dự án
-cd DTC245200024
-
-# Bước 3: Kiểm tra file cấu hình môi trường
-ls -la
-nano .env
-
-# Bước 4: Kiểm tra cấu hình Docker Compose
-docker compose config
-
-# Bước 5: Khởi chạy toàn bộ hệ thống
-sudo docker compose up -d --build
-
-# Bước 6: Kiểm tra trạng thái container
-sudo docker compose ps
-
-# Bước 7: Xem log nếu có lỗi
-sudo docker compose logs --tail=100
-### 3. Lệnh khởi chạy toàn bộ hệ thống bằng Docker Compose
-Mở Terminal tại thư mục gốc của dự án:
-```bash
-# Khởi chạy toàn bộ hệ thống gồm Website, Reverse Proxy, Monitoring và Logging Stack
-docker compose up -d --build
-```
 
 ### 4. Kiểm tra trạng thái và log các container
 ```bash
@@ -247,39 +219,3 @@ docker compose down
 | **PUT** | `/api/bookings/:id`| Cập nhật trạng thái đơn |
 | **GET** | `/api/stats` | Thống kê doanh thu & phòng (Admin) |
 
-### 9. cấu trúc dụ án
-DTC245200024/
-├── backend/
-│   ├── Dockerfile
-│   ├── data/
-│   ├── uploads/
-│   └── ...                 # Mã nguồn Node.js + Express REST API
-│
-├── frontend/
-│   ├── Dockerfile
-│   └── ...                 # Mã nguồn React 19 + Vite
-│
-├── mongo-init/
-│   └── ...                 # Khởi tạo cơ sở dữ liệu MongoDB
-│
-├── nginx/
-│   ├── Dockerfile
-│   ├── nginx.conf          # Reverse proxy và security headers
-│   └── ...                 # Cấu hình SSL nếu có
-│
-├── monitoring/
-│   ├── prometheus/
-│   │   └── prometheus.yml
-│   ├── grafana/
-│   │   ├── provisioning/
-│   │   └── dashboards/
-│   ├── loki/
-│   │   └── loki.yml
-│   └── promtail/
-│       └── promtail.yml
-│
-├── docker-compose.yml      # Khai báo và kết nối các container
-├── .env                    # Biến môi trường và thông tin cấu hình
-├── .env.example            # Mẫu cấu hình, nếu có
-├── .gitignore
-└── README.md               # Hướng dẫn cài đặt và sử dụng
