@@ -117,6 +117,9 @@ DTC245200024/
 ├── .env.example
 ├── .gitignore
 └── README.md
+```</WritingBlock>
+
+**Lưu ý:** Đây là cấu trúc mẫu theo hệ thống PostgreSQL và pgAdmin của bạn. Chỉ giữ những thư mục, tệp thực sự tồn tại trong dự án.
 
 ## 👥 TÀI KHOẢN TRẢI NGHIỆM & HƯỚNG DẪN ĐĂNG NHẬP
 
